@@ -15,3 +15,7 @@ backend/data/*.db-wal
 # Node
 frontend/node_modules/
 frontend/dist/
+.env
+*.env
+backend/.env
+frontend/.env
