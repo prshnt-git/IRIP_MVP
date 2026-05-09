@@ -1,0 +1,3 @@
+product_id,product_name,brand,price_band,own_brand,competitor_product_ids,comparison_group,notes
+phone_a,Demo Phone A,TECNO,10000-15000,true,phone_b,direct_competitor,Demo competitor mapping for local testing
+phone_b,Competitor Phone B,CompetitorBrand,10000-15000,false,,direct_competitor,

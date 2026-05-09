@@ -1,0 +1,32 @@
+from app.schemas.lexicon import LivingLexiconEntry, LexiconTermType
+
+
+SEED_LEXICON: list[LivingLexiconEntry] = [
+    LivingLexiconEntry(term="mast", normalized_term="excellent", term_type=LexiconTermType.sentiment, sentiment_prior="positive", intensity=0.86, confidence=0.9, approved_by_human=True),
+    LivingLexiconEntry(term="zabardast", normalized_term="excellent", term_type=LexiconTermType.sentiment, sentiment_prior="positive", intensity=0.92, confidence=0.9, approved_by_human=True),
+    LivingLexiconEntry(term="paisa vasool", normalized_term="value for money", term_type=LexiconTermType.sentiment, aspect="value", sentiment_prior="positive", intensity=0.9, confidence=0.92, approved_by_human=True),
+    LivingLexiconEntry(term="bekar", normalized_term="bad", term_type=LexiconTermType.sentiment, sentiment_prior="negative", intensity=0.86, confidence=0.9, approved_by_human=True),
+    LivingLexiconEntry(term="bakwas", normalized_term="terrible", term_type=LexiconTermType.sentiment, sentiment_prior="negative", intensity=0.93, confidence=0.92, approved_by_human=True),
+    LivingLexiconEntry(term="faltu", normalized_term="useless", term_type=LexiconTermType.sentiment, sentiment_prior="negative", intensity=0.88, confidence=0.88, approved_by_human=True),
+    LivingLexiconEntry(term="theek hai", normalized_term="okay", term_type=LexiconTermType.sentiment, sentiment_prior="neutral", intensity=0.5, confidence=0.82, approved_by_human=True),
+    LivingLexiconEntry(term="camera", normalized_term="camera", term_type=LexiconTermType.aspect, aspect="camera", confidence=0.95, approved_by_human=True),
+    LivingLexiconEntry(term="camra", normalized_term="camera", term_type=LexiconTermType.spelling_variant, aspect="camera", confidence=0.86, approved_by_human=True),
+    LivingLexiconEntry(term="kamera", normalized_term="camera", term_type=LexiconTermType.spelling_variant, aspect="camera", confidence=0.84, approved_by_human=True),
+    LivingLexiconEntry(term="battery", normalized_term="battery", term_type=LexiconTermType.aspect, aspect="battery", confidence=0.95, approved_by_human=True),
+    LivingLexiconEntry(term="baatri", normalized_term="battery", term_type=LexiconTermType.spelling_variant, aspect="battery", confidence=0.82, approved_by_human=True),
+    LivingLexiconEntry(term="battri", normalized_term="battery", term_type=LexiconTermType.spelling_variant, aspect="battery", confidence=0.82, approved_by_human=True),
+    LivingLexiconEntry(term="backup", normalized_term="battery backup", term_type=LexiconTermType.aspect, aspect="battery", confidence=0.9, approved_by_human=True),
+    LivingLexiconEntry(term="heating", normalized_term="heating", term_type=LexiconTermType.aspect, aspect="heating", confidence=0.95, approved_by_human=True),
+    LivingLexiconEntry(term="garam", normalized_term="heating", term_type=LexiconTermType.aspect, aspect="heating", sentiment_prior="negative", intensity=0.78, confidence=0.9, approved_by_human=True),
+    LivingLexiconEntry(term="display", normalized_term="display", term_type=LexiconTermType.aspect, aspect="display", confidence=0.95, approved_by_human=True),
+    LivingLexiconEntry(term="performance", normalized_term="performance", term_type=LexiconTermType.aspect, aspect="performance", confidence=0.95, approved_by_human=True),
+    LivingLexiconEntry(term="lag", normalized_term="lag", term_type=LexiconTermType.aspect, aspect="performance", sentiment_prior="negative", intensity=0.78, confidence=0.88, approved_by_human=True),
+    LivingLexiconEntry(term="charging", normalized_term="charging", term_type=LexiconTermType.aspect, aspect="charging", confidence=0.95, approved_by_human=True),
+    LivingLexiconEntry(term="delivery", normalized_term="delivery", term_type=LexiconTermType.delivery_service, confidence=0.95, approved_by_human=True),
+    LivingLexiconEntry(term="packaging", normalized_term="packaging", term_type=LexiconTermType.delivery_service, confidence=0.95, approved_by_human=True),
+    LivingLexiconEntry(term="seller", normalized_term="seller", term_type=LexiconTermType.delivery_service, confidence=0.95, approved_by_human=True),
+    LivingLexiconEntry(term="return", normalized_term="return", term_type=LexiconTermType.delivery_service, confidence=0.9, approved_by_human=True),
+    LivingLexiconEntry(term="refund", normalized_term="refund", term_type=LexiconTermType.delivery_service, confidence=0.9, approved_by_human=True),
+    LivingLexiconEntry(term="wah wah", normalized_term="sarcasm marker", term_type=LexiconTermType.sarcasm_marker, confidence=0.7, approved_by_human=True),
+    LivingLexiconEntry(term="kya kehna", normalized_term="sarcasm marker", term_type=LexiconTermType.sarcasm_marker, confidence=0.7, approved_by_human=True),
+]

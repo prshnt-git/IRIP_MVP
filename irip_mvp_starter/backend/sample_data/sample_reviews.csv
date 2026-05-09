@@ -1,0 +1,2 @@
+review_id,source,product_id,product_name,brand,review_date,rating,title,raw_text,verified_purchase,helpful_votes,price_band
+r001,flipkart,phone_a,Demo Phone A,TECNO,2026-04-01,3,Mixed review,Bhai camera mast hai but battery backup bekar hai,TRUE,5,10000-15000
