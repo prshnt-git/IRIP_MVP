@@ -144,6 +144,12 @@ class ProductCatalogService:
 
         for row_number, row in enumerate(reader, start=2):
             try:
+                row = self._normalize_row_keys(row)
+
+                if self._is_empty_row(row):
+                    skipped_count += 1
+                    continue
+
                 record = self._row_to_record(row)
 
                 if not record["product_name"]:
@@ -275,6 +281,27 @@ class ProductCatalogService:
             "product": None,
         }
 
+
+    def _is_empty_row(self, row: dict[str, Any]) -> bool:
+        return not any(self._clean(value) for value in row.values())
+
+
+    def _normalize_row_keys(self, row: dict[str, Any]) -> dict[str, Any]:
+        normalized: dict[str, Any] = {}
+
+        for key, value in row.items():
+            if key is None:
+                continue
+
+            clean_key = str(key).strip()
+            clean_key = clean_key.replace("\\_", "_")
+            clean_key = clean_key.replace("\_", "_")
+            clean_key = clean_key.strip()
+
+            normalized[clean_key] = value
+
+        return normalized
+
     def _row_to_record(self, row: dict[str, Any]) -> dict:
         product_name = self._clean(row.get("product_name") or row.get("name"))
         model_name = self._clean(row.get("model_name") or row.get("model") or product_name)
@@ -382,6 +409,7 @@ class ProductCatalogService:
         if text.lower() in {"nan", "none", "null", "n/a", "na", "-", "--"}:
             return None
 
+        text = text.replace("\\_", "_").replace("\_", "_")
         return " ".join(text.split())
 
     def _parse_bool(self, value: Any) -> bool | None:
@@ -486,6 +514,140 @@ class ProductCatalogImportService(ProductCatalogService):
                     imported_mappings += 1
 
         result.imported_mappings = imported_mappings
+        return result
+
+    def import_csv(self, csv_text: str):
+        return self.import_csv_text(csv_text)
+
+    def import_csv_file(self, csv_path):
+        return self.import_csv_path(csv_path)
+
+    def import_csv_from_url(self, url: str):
+        return self.import_csv_url(url)
+
+    def _legacy_split_competitors(self, value) -> list[str]:
+        if not value:
+            return []
+
+        return [
+            item.strip()
+            for item in str(value).replace(";", ",").split(",")
+            if item.strip()
+        ]
+
+    def _legacy_bool(self, value):
+        if value is None:
+            return None
+
+        text = str(value).strip().lower()
+        if not text:
+            return None
+
+        if text in {"true", "1", "yes", "y", "own", "owned"}:
+            return True
+
+        if text in {"false", "0", "no", "n", "competitor"}:
+            return False
+
+        return None
+
+
+# V0.8.3 safe legacy importer.
+# Important:
+# - ProductCatalogService remains the real CSV/Google Sheet catalog service.
+# - ProductCatalogImportService is only a compatibility adapter for older tests/routes.
+# - When repository is provided, it writes to repository only and must NOT pollute data/product_catalog.json.
+class ProductCatalogImportService(ProductCatalogService):
+    def __init__(self, repository=None, *args, **kwargs) -> None:
+        self.repository = repository
+        super().__init__(*args, **kwargs)
+
+    def import_csv_text(self, csv_text: str):
+        import csv
+        import io
+
+        if self.repository is None:
+            return super().import_csv_text(csv_text)
+
+        rows = list(csv.DictReader(io.StringIO(csv_text)))
+        imported_products = 0
+        imported_mappings = 0
+        failed_count = 0
+        errors = []
+        product_ids = []
+
+        for row_number, raw_row in enumerate(rows, start=2):
+            try:
+                row = {
+                    str(key).strip(): (value.strip() if isinstance(value, str) else value)
+                    for key, value in raw_row.items()
+                    if key is not None
+                }
+
+                product_id = row.get("product_id")
+                product_name = row.get("product_name") or row.get("name") or row.get("model_name") or row.get("model")
+                brand = row.get("brand")
+                price_band = row.get("price_band")
+                own_brand = self._legacy_bool(row.get("own_brand") or row.get("is_own_product"))
+
+                if not product_id:
+                    identity = self.identity_service.build_identity(
+                        product_name=product_name or "unknown",
+                        brand=brand,
+                        model_name=row.get("model_name") or row.get("model"),
+                    )
+                    product_id = identity.product_id
+
+                product_ids.append(product_id)
+
+                if hasattr(self.repository, "upsert_product"):
+                    self.repository.upsert_product(
+                        product_id=product_id,
+                        product_name=product_name,
+                        brand=brand,
+                        price_band=price_band,
+                        own_brand=own_brand,
+                    )
+
+                imported_products += 1
+
+                competitor_ids = self._legacy_split_competitors(
+                    row.get("competitor_product_ids") or row.get("direct_competitor_ids")
+                )
+
+                for competitor_id in competitor_ids:
+                    if hasattr(self.repository, "upsert_product"):
+                        self.repository.upsert_product(product_id=competitor_id)
+
+                    if hasattr(self.repository, "save_competitor_mapping"):
+                        self.repository.save_competitor_mapping(
+                            product_id=product_id,
+                            competitor_product_id=competitor_id,
+                            comparison_group=row.get("comparison_group") or "direct_competitor",
+                            notes=row.get("mapping_notes") or row.get("notes"),
+                        )
+                        imported_mappings += 1
+
+            except Exception as exc:
+                failed_count += 1
+                errors.append(
+                    {
+                        "row_number": row_number,
+                        "reason": str(exc),
+                        "row": raw_row,
+                    }
+                )
+
+        result = CatalogImportResult(
+            imported_count=imported_products,
+            updated_count=0,
+            skipped_count=0,
+            failed_count=failed_count,
+            errors=errors,
+            product_ids=sorted(set(product_ids)),
+            storage_path=str(self.storage_path),
+            imported_mappings=imported_mappings,
+        )
         return result
 
     def import_csv(self, csv_text: str):

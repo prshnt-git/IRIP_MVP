@@ -1,0 +1,7 @@
+#!/bin/sh
+cd irip_mvp_starter || exit 1
+python scripts/check_secrets.py
+if [ $? -ne 0 ]; then
+  echo "Commit blocked: potential secret detected."
+  exit 1
+fi
