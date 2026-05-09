@@ -509,6 +509,18 @@ def list_products():
             merged[product_id] = catalog_view
 
     products = list(merged.values())
+
+    # Hide obvious demo/test products from user-facing product lists.
+    # Backend tests and stored data remain untouched.
+    hidden_demo_ids = {"phone_a", "phone_b"}
+    products = [
+        product
+        for product in products
+        if product.get("product_id") not in hidden_demo_ids
+        and "demo phone" not in str(product.get("product_name") or "").lower()
+        and "competitor phone" not in str(product.get("product_name") or "").lower()
+    ]
+
     products.sort(
         key=lambda item: (
             not bool(item.get("own_brand")),
