@@ -1,0 +1,34 @@
+{
+  "imported_candidate_count": 7,
+  "skipped_count": 0,
+  "duplicate_count": 1,
+  "unresolved_count": 1,
+  "errors": [],
+  "unresolved_rows": [
+    {
+      "row_number": 10,
+      "reason": "Could not resolve product to catalog.",
+      "product_id": null,
+      "product_name": "Unknown Phone",
+      "brand": null,
+      "raw_text": "This should remain unresolved",
+      "resolver": {
+        "status": "unmatched",
+        "match_type": "none",
+        "confidence": 0.0,
+        "identity": {
+          "raw_name": "Unknown Phone",
+          "brand": null,
+          "normalized_brand": null,
+          "normalized_model_key": "unknown",
+          "canonical_product_key": "unknown_brand|unknown",
+          "product_id": "unknown",
+          "variant_key": null,
+          "confidence": 1.0,
+          "match_reason": "deterministic_normalization"
+        },
+        "product": null
+      }
+    }
+  ]
+}

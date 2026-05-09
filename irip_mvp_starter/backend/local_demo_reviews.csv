@@ -1,0 +1,5 @@
+﻿review_id,product_id,product_name,brand,source,marketplace,raw_text,rating,review_date
+r_local_a_001,phone_a,Demo Phone A,Infinix,manual_csv,flipkart,Camera mast hai but battery backup bekar hai,3,2026-04-01
+r_local_a_002,phone_a,Demo Phone A,Infinix,manual_csv,flipkart,Display bright hai but speaker volume low hai,4,2026-04-02
+r_local_b_001,phone_b,Competitor Phone B,Realme,manual_csv,flipkart,Battery backup bahut accha hai aur charging fast hai,5,2026-04-01
+r_local_b_002,phone_b,Competitor Phone B,Realme,manual_csv,flipkart,Camera average hai but display smooth aur bright hai,4,2026-04-02

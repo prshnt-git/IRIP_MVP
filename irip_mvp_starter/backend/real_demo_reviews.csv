@@ -1,0 +1,9 @@
+﻿review_id,product_id,product_name,brand,source,marketplace,raw_text,rating,review_date
+rn13_001,redmi_note_13_5g,Redmi Note 13 5G,Xiaomi,manual_csv,flipkart,Camera achha hai aur display smooth hai,4,2026-04-01
+rn13_002,redmi_note_13_5g,Redmi Note 13 5G,Xiaomi,manual_csv,flipkart,Battery backup decent hai but charging thodi slow lagti hai,3,2026-04-02
+rn13_003,redmi_note_13_5g,Redmi Note 13 5G,Xiaomi,manual_csv,flipkart,Performance daily use ke liye smooth hai,4,2026-04-03
+rn13_004,redmi_note_13_5g,Redmi Note 13 5G,Xiaomi,manual_csv,flipkart,Display bright hai outdoor me bhi readable hai,5,2026-04-04
+narzo70x_001,realme_narzo_70x_5g,Realme Narzo 70x 5G,Realme,manual_csv,flipkart,Battery backup bahut accha hai aur charging fast hai,5,2026-04-01
+narzo70x_002,realme_narzo_70x_5g,Realme Narzo 70x 5G,Realme,manual_csv,flipkart,Camera average hai but performance good hai,4,2026-04-02
+narzo70x_003,realme_narzo_70x_5g,Realme Narzo 70x 5G,Realme,manual_csv,flipkart,Phone gaming me thoda heat karta hai,3,2026-04-03
+narzo70x_004,realme_narzo_70x_5g,Realme Narzo 70x 5G,Realme,manual_csv,flipkart,Display smooth hai aur battery long lasting hai,5,2026-04-04

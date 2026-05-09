@@ -1,210 +1,525 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import csv
-import io
+import json
 import urllib.request
-from urllib.parse import urlparse
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
 
-from app.db.repository import ReviewRepository
-from app.schemas.imports import ImportErrorItem, ProductCatalogImportResult
-
-OWN_BRAND_NAMES = {"tecno", "infinix", "itel"}
-KNOWN_COMPETITOR_BRANDS = {
-    "samsung",
-    "xiaomi",
-    "redmi",
-    "poco",
-    "realme",
-    "vivo",
-    "oppo",
-    "motorola",
-    "oneplus",
-    "iqoo",
-    "nothing",
-    "lava",
-}
+from app.services.product_identity_service import ProductIdentityService
 
 
-class ProductCatalogImportService:
-    """Imports product catalog metadata and ownership mappings.
+@dataclass
+class CatalogImportResult:
+    imported_count: int
+    updated_count: int
+    skipped_count: int
+    failed_count: int
+    errors: list[dict]
+    product_ids: list[str]
+    storage_path: str
+    imported_mappings: int = 0
 
-    The catalog is the source of truth for whether a product belongs to
-    Transsion-owned brands or should be treated as a competitor. We infer only
-    when explicit own_brand is missing.
+    @property
+    def imported_products(self) -> int:
+        """Backward-compatible name used by older tests/code.
+
+        Old code counted every valid processed catalog row as imported.
+        New code separates new rows and updated rows, so this compatibility
+        property returns both.
+        """
+        return self.imported_count + self.updated_count
+    @property
+    def updated_products(self) -> int:
+        """Backward-compatible alias for updated catalog rows."""
+        return self.updated_count
+
+    @property
+    def skipped_products(self) -> int:
+        """Backward-compatible alias for skipped catalog rows."""
+        return self.skipped_count
+
+
+
+class ProductCatalogService:
+    """Controlled product catalog importer for IRIP.
+
+    Current purpose:
+    - Accept product catalog rows from CSV / Google Sheet published as CSV.
+    - Normalize product identity through ProductIdentityService.
+    - Store clean catalog records in a stable JSON store.
+    - Keep own products and competitor products in the same structure.
+
+    Later:
+    - This same service can upsert into product_specs DB table.
+    - Review ingestion will resolve incoming reviews against this catalog.
     """
 
-    REQUIRED_COLUMNS = {"product_id"}
+    CATALOG_FIELDS = [
+        "product_id",
+        "company_name",
+        "brand",
+        "product_name",
+        "model_name",
+        "series_name",
+        "canonical_product_key",
+        "normalized_brand",
+        "normalized_model_key",
+        "variant_key",
+        "is_own_product",
+        "launch_date",
+        "launch_market",
+        "price_band",
+        "current_price",
+        "ram",
+        "storage",
+        "battery_capacity",
+        "charging_wattage",
+        "chipset",
+        "display_size",
+        "display_type",
+        "refresh_rate",
+        "screen_to_body_ratio",
+        "rear_camera",
+        "front_camera",
+        "android_version",
+        "custom_ui",
+        "network_5g",
+        "weight",
+        "thickness",
+        "official_url",
+        "marketplace_url",
+        "source_name",
+        "source_confidence",
+        "updated_at",
+    ]
 
-    def __init__(self, repository: ReviewRepository) -> None:
-        self.repository = repository
+    OWN_COMPANY_NAME = "Transsion Holdings"
 
-    def import_csv_url(self, url: str) -> ProductCatalogImportResult:
-        parsed = urlparse(url)
-        if parsed.scheme not in {"http", "https"}:
-            return ProductCatalogImportResult(
-                imported_products=0,
-                imported_mappings=0,
-                failed_count=1,
-                errors=[ImportErrorItem(row_number=0, reason="Only http/https CSV URLs are supported")],
-            )
-        try:
-            request = urllib.request.Request(url, headers={"User-Agent": "IRIP-MVP/0.1 catalog importer"})
-            with urllib.request.urlopen(request, timeout=20) as response:
-                raw_bytes = response.read(2_000_001)
-        except Exception as exc:  # pragma: no cover
-            return ProductCatalogImportResult(
-                imported_products=0,
-                imported_mappings=0,
-                failed_count=1,
-                errors=[ImportErrorItem(row_number=0, reason=f"Could not fetch catalog CSV URL: {exc}")],
-            )
-        if len(raw_bytes) > 2_000_000:
-            return ProductCatalogImportResult(
-                imported_products=0,
-                imported_mappings=0,
-                failed_count=1,
-                errors=[ImportErrorItem(row_number=0, reason="Catalog CSV URL response is larger than 2 MB MVP limit")],
-            )
-        return self.import_csv_text(raw_bytes.decode("utf-8-sig"))
+    def __init__(
+        self,
+        identity_service: ProductIdentityService | None = None,
+        storage_path: str | Path | None = None,
+    ) -> None:
+        self.identity_service = identity_service or ProductIdentityService()
+        backend_root = Path(__file__).resolve().parents[2]
+        self.storage_path = Path(storage_path) if storage_path else backend_root / "data" / "product_catalog.json"
+        self.storage_path.parent.mkdir(parents=True, exist_ok=True)
 
-    def import_csv_text(self, csv_text: str) -> ProductCatalogImportResult:
-        reader = csv.DictReader(io.StringIO(csv_text))
-        if not reader.fieldnames:
-            return ProductCatalogImportResult(
-                imported_products=0,
-                imported_mappings=0,
-                failed_count=1,
-                errors=[ImportErrorItem(row_number=0, reason="CSV has no header row")],
-            )
-        headers = {h.strip() for h in reader.fieldnames if h}
-        missing = sorted(self.REQUIRED_COLUMNS - headers)
-        if missing:
-            return ProductCatalogImportResult(
-                imported_products=0,
-                imported_mappings=0,
-                failed_count=1,
-                errors=[ImportErrorItem(row_number=0, reason=f"Missing required column(s): {', '.join(missing)}")],
-            )
+    def import_csv_path(self, csv_path: str | Path) -> CatalogImportResult:
+        path = Path(csv_path)
+        text = path.read_text(encoding="utf-8-sig")
+        return self.import_csv_text(text)
 
-        imported_products = 0
+    def import_csv_url(self, url: str, timeout: int = 30) -> CatalogImportResult:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            text = response.read().decode("utf-8-sig")
+        return self.import_csv_text(text)
+
+    def import_csv_text(self, csv_text: str) -> CatalogImportResult:
+        existing = self._load_catalog_map()
+        reader = csv.DictReader(csv_text.splitlines())
+
+        imported_count = 0
+        updated_count = 0
+        skipped_count = 0
+        failed_count = 0
         imported_mappings = 0
-        own_brand_count = 0
-        competitor_brand_count = 0
-        errors: list[ImportErrorItem] = []
-        product_ids: set[str] = set()
+        errors: list[dict] = []
+        product_ids: list[str] = []
 
-        for row_number, raw_row in enumerate(reader, start=2):
-            row = {
-                key.strip(): (value.strip() if isinstance(value, str) else value)
-                for key, value in raw_row.items()
-                if key
-            }
-            product_id = _normalize_id(row.get("product_id") or "")
-            if not product_id:
-                errors.append(ImportErrorItem(row_number=row_number, reason="product_id is required"))
-                continue
+        if not reader.fieldnames:
+            return CatalogImportResult(
+                imported_count=0,
+                updated_count=0,
+                skipped_count=0,
+                failed_count=1,
+                errors=[{"row_number": None, "reason": "CSV has no header row."}],
+                product_ids=[],
+                storage_path=str(self.storage_path),
+                imported_mappings=0,
+            )
+
+        for row_number, row in enumerate(reader, start=2):
             try:
-                brand = _empty_to_none(row.get("brand"))
-                own_brand = _infer_own_brand(
-                    explicit_value=row.get("own_brand"),
-                    brand=brand,
-                    product_name=row.get("product_name") or row.get("model"),
-                )
-                parent_company = _empty_to_none(row.get("parent_company"))
-                if own_brand and not parent_company:
-                    parent_company = "Transsion Holdings"
+                record = self._row_to_record(row)
 
+                if not record["product_name"]:
+                    skipped_count += 1
+                    errors.append(
+                        {
+                            "row_number": row_number,
+                            "reason": "Missing product_name.",
+                            "value": row,
+                        }
+                    )
+                    continue
+
+                product_id = record["product_id"]
+                product_ids.append(product_id)
+
+                competitor_product_ids_raw = row.get("competitor_product_ids")
+                if competitor_product_ids_raw:
+                    imported_mappings += len([
+                        item.strip()
+                        for item in str(competitor_product_ids_raw).split(";")
+                        if item.strip()
+                    ])
+
+                if product_id in existing:
+                    existing[product_id] = {
+                        **existing[product_id],
+                        **record,
+                        "updated_at": self._now_iso(),
+                    }
+                    updated_count += 1
+                else:
+                    existing[product_id] = record
+                    imported_count += 1
+
+            except Exception as exc:
+                failed_count += 1
+                errors.append(
+                    {
+                        "row_number": row_number,
+                        "reason": str(exc),
+                        "value": row,
+                    }
+                )
+
+        self._save_catalog_map(existing)
+
+        return CatalogImportResult(
+            imported_count=imported_count,
+            updated_count=updated_count,
+            skipped_count=skipped_count,
+            failed_count=failed_count,
+            errors=errors,
+            product_ids=sorted(set(product_ids)),            storage_path=str(self.storage_path),
+            imported_mappings=imported_mappings,
+        )
+
+    def list_catalog(self, own_only: bool | None = None) -> list[dict]:
+        records = list(self._load_catalog_map().values())
+        records.sort(key=lambda item: (str(item.get("brand") or ""), str(item.get("product_name") or "")))
+
+        if own_only is None:
+            return records
+
+        return [
+            item
+            for item in records
+            if bool(item.get("is_own_product")) is own_only
+        ]
+
+    def get_product(self, product_id: str) -> dict | None:
+        return self._load_catalog_map().get(product_id)
+
+    def resolve_product(self, product_name: str, brand: str | None = None) -> dict:
+        identity = self.identity_service.build_identity(product_name=product_name, brand=brand)
+        catalog = self._load_catalog_map()
+
+        exact = catalog.get(identity.product_id)
+        if exact:
+            return {
+                "status": "matched",
+                "match_type": "product_id",
+                "confidence": 1.0,
+                "identity": asdict(identity),
+                "product": exact,
+            }
+
+        canonical_matches = [
+            item
+            for item in catalog.values()
+            if item.get("canonical_product_key") == identity.canonical_product_key
+        ]
+
+        if canonical_matches:
+            return {
+                "status": "matched",
+                "match_type": "canonical_product_key",
+                "confidence": 0.98,
+                "identity": asdict(identity),
+                "product": canonical_matches[0],
+            }
+
+        best = None
+        best_score = 0.0
+
+        for item in catalog.values():
+            score = self.identity_service.similarity(
+                identity.canonical_product_key,
+                str(item.get("canonical_product_key") or ""),
+            )
+            if score > best_score:
+                best_score = score
+                best = item
+
+        if best and best_score >= 0.82:
+            return {
+                "status": "possible_match",
+                "match_type": "similarity",
+                "confidence": best_score,
+                "identity": asdict(identity),
+                "product": best,
+            }
+
+        return {
+            "status": "unmatched",
+            "match_type": "none",
+            "confidence": 0.0,
+            "identity": asdict(identity),
+            "product": None,
+        }
+
+    def _row_to_record(self, row: dict[str, Any]) -> dict:
+        product_name = self._clean(row.get("product_name") or row.get("name"))
+        model_name = self._clean(row.get("model_name") or row.get("model") or product_name)
+        brand = self._clean(row.get("brand"))
+
+        identity = self.identity_service.build_identity(
+            product_name=product_name,
+            brand=brand,
+            model_name=model_name,
+        )
+
+        normalized_brand = identity.normalized_brand
+        is_own_product = self._parse_bool(row.get("is_own_product"))
+
+        if is_own_product is None:
+            is_own_product = self.identity_service.is_own_brand(normalized_brand)
+
+        company_name = self._clean(row.get("company_name"))
+        if not company_name and is_own_product:
+            company_name = self.OWN_COMPANY_NAME
+
+        if not brand and normalized_brand:
+            brand = normalized_brand.upper() if normalized_brand in {"tecno", "itel"} else normalized_brand.title()
+
+        product_id = self._clean(row.get("product_id")) or identity.product_id
+
+        record = {
+            "product_id": product_id,
+            "company_name": company_name,
+            "brand": brand,
+            "product_name": product_name,
+            "model_name": model_name,
+            "series_name": self._clean(row.get("series_name") or row.get("series")),
+            "canonical_product_key": identity.canonical_product_key,
+            "normalized_brand": normalized_brand,
+            "normalized_model_key": identity.normalized_model_key,
+            "variant_key": self._clean(row.get("variant_key")) or identity.variant_key,
+            "is_own_product": bool(is_own_product),
+            "launch_date": self._clean(row.get("launch_date")),
+            "launch_market": self._clean(row.get("launch_market") or row.get("market")),
+            "price_band": self._clean(row.get("price_band")),
+            "current_price": self._clean(row.get("current_price") or row.get("price")),
+            "ram": self._clean(row.get("ram")),
+            "storage": self._clean(row.get("storage")),
+            "battery_capacity": self._clean(row.get("battery_capacity") or row.get("battery")),
+            "charging_wattage": self._clean(row.get("charging_wattage") or row.get("charging")),
+            "chipset": self._clean(row.get("chipset") or row.get("processor")),
+            "display_size": self._clean(row.get("display_size")),
+            "display_type": self._clean(row.get("display_type")),
+            "refresh_rate": self._clean(row.get("refresh_rate")),
+            "screen_to_body_ratio": self._clean(row.get("screen_to_body_ratio")),
+            "rear_camera": self._clean(row.get("rear_camera")),
+            "front_camera": self._clean(row.get("front_camera")),
+            "android_version": self._clean(row.get("android_version")),
+            "custom_ui": self._clean(row.get("custom_ui")),
+            "network_5g": self._clean(row.get("network_5g")),
+            "weight": self._clean(row.get("weight")),
+            "thickness": self._clean(row.get("thickness")),
+            "official_url": self._clean(row.get("official_url")),
+            "marketplace_url": self._clean(row.get("marketplace_url")),
+            "source_name": self._clean(row.get("source_name")) or "manual_catalog",
+            "source_confidence": self._clean(row.get("source_confidence")) or "manual_pending",
+            "updated_at": self._now_iso(),
+        }
+
+        return {field: record.get(field) for field in self.CATALOG_FIELDS}
+
+    def _load_catalog_map(self) -> dict[str, dict]:
+        if not self.storage_path.exists():
+            return {}
+
+        try:
+            data = json.loads(self.storage_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {}
+
+        if not isinstance(data, list):
+            return {}
+
+        records = {}
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            product_id = str(item.get("product_id") or "").strip()
+            if product_id:
+                records[product_id] = item
+
+        return records
+
+    def _save_catalog_map(self, records: dict[str, dict]) -> None:
+        data = [records[key] for key in sorted(records)]
+        self.storage_path.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    def _clean(self, value: Any) -> str | None:
+        if value is None:
+            return None
+
+        text = str(value).strip()
+        if not text:
+            return None
+
+        if text.lower() in {"nan", "none", "null", "n/a", "na", "-", "--"}:
+            return None
+
+        return " ".join(text.split())
+
+    def _parse_bool(self, value: Any) -> bool | None:
+        if value is None:
+            return None
+
+        text = str(value).strip().lower()
+        if not text:
+            return None
+
+        if text in {"1", "true", "yes", "y", "own", "owned"}:
+            return True
+
+        if text in {"0", "false", "no", "n", "competitor"}:
+            return False
+
+        return None
+
+    def _now_iso(self) -> str:
+        return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+# Backward-compatible wrapper for older app/main.py wiring.
+class ProductCatalogImportService(ProductCatalogService):
+    def __init__(self, repository=None, *args, **kwargs) -> None:
+        self.repository = repository
+        super().__init__(*args, **kwargs)
+
+    def import_csv(self, csv_text: str):
+        return self.import_csv_text(csv_text)
+
+    def import_csv_file(self, csv_path):
+        return self.import_csv_path(csv_path)
+
+    def import_csv_from_url(self, url: str):
+        return self.import_csv_url(url)
+
+
+# V0.8.2 backward-compatible importer for older competitor mapping tests/routes.
+# This intentionally sits at the bottom so it overrides any earlier alias/class with the same name.
+class ProductCatalogImportService(ProductCatalogService):
+    def __init__(self, repository=None, *args, **kwargs) -> None:
+        self.repository = repository
+        super().__init__(*args, **kwargs)
+
+    def import_csv_text(self, csv_text: str):
+        import csv
+        import io
+
+        result = super().import_csv_text(csv_text)
+
+        if self.repository is None:
+            return result
+
+        imported_mappings = 0
+
+        reader = csv.DictReader(io.StringIO(csv_text))
+        for raw_row in reader:
+            row = {
+                str(key).strip(): (value.strip() if isinstance(value, str) else value)
+                for key, value in raw_row.items()
+                if key is not None
+            }
+
+            product_id = row.get("product_id")
+            product_name = row.get("product_name") or row.get("name") or row.get("model_name") or row.get("model")
+            brand = row.get("brand")
+            price_band = row.get("price_band")
+            own_brand = self._legacy_bool(row.get("own_brand") or row.get("is_own_product"))
+
+            if not product_id:
+                identity = self.identity_service.build_identity(
+                    product_name=product_name or "unknown",
+                    brand=brand,
+                    model_name=row.get("model_name") or row.get("model"),
+                )
+                product_id = identity.product_id
+
+            if hasattr(self.repository, "upsert_product"):
                 self.repository.upsert_product(
                     product_id=product_id,
-                    product_name=_empty_to_none(row.get("product_name")) or _empty_to_none(row.get("model")),
+                    product_name=product_name,
                     brand=brand,
-                    parent_company=parent_company,
-                    price_band=_empty_to_none(row.get("price_band")),
+                    price_band=price_band,
                     own_brand=own_brand,
-                    marketplace=_empty_to_none(row.get("marketplace")),
-                    marketplace_product_id=_empty_to_none(row.get("marketplace_product_id"))
-                    or _empty_to_none(row.get("asin"))
-                    or _empty_to_none(row.get("fsn")),
-                    marketplace_product_url=_empty_to_none(row.get("marketplace_product_url"))
-                    or _empty_to_none(row.get("product_url")),
-                    launch_period=_empty_to_none(row.get("launch_period")),
-                    comparison_group=_empty_to_none(row.get("comparison_group")),
                 )
-                imported_products += 1
-                product_ids.add(product_id)
-                if own_brand is True:
-                    own_brand_count += 1
-                elif own_brand is False:
-                    competitor_brand_count += 1
 
-                competitor_ids = _split_competitors(row.get("competitor_product_ids") or row.get("direct_competitor_ids"))
-                for competitor_id_raw in competitor_ids:
-                    competitor_id = _normalize_id(competitor_id_raw)
-                    self.repository.upsert_product(product_id=competitor_id, own_brand=False)
+            competitor_ids = self._legacy_split_competitors(
+                row.get("competitor_product_ids") or row.get("direct_competitor_ids")
+            )
+
+            for competitor_id in competitor_ids:
+                if hasattr(self.repository, "upsert_product"):
+                    self.repository.upsert_product(product_id=competitor_id)
+
+                if hasattr(self.repository, "save_competitor_mapping"):
                     self.repository.save_competitor_mapping(
                         product_id=product_id,
                         competitor_product_id=competitor_id,
-                        comparison_group=_empty_to_none(row.get("comparison_group")) or "direct_competitor",
-                        notes=_empty_to_none(row.get("mapping_notes")) or _empty_to_none(row.get("notes")),
+                        comparison_group=row.get("comparison_group") or "direct_competitor",
+                        notes=row.get("mapping_notes") or row.get("notes"),
                     )
                     imported_mappings += 1
-            except ValueError as exc:
-                errors.append(ImportErrorItem(row_number=row_number, reason=str(exc)))
 
-        return ProductCatalogImportResult(
-            imported_products=imported_products,
-            imported_mappings=imported_mappings,
-            failed_count=len(errors),
-            errors=errors[:50],
-            product_ids=sorted(product_ids),
-            own_brand_count=own_brand_count,
-            competitor_brand_count=competitor_brand_count,
-        )
+        result.imported_mappings = imported_mappings
+        return result
 
+    def import_csv(self, csv_text: str):
+        return self.import_csv_text(csv_text)
 
-def _normalize_id(value: str) -> str:
-    return value.strip().lower().replace(" ", "_")
+    def import_csv_file(self, csv_path):
+        return self.import_csv_path(csv_path)
 
+    def import_csv_from_url(self, url: str):
+        return self.import_csv_url(url)
 
-def _empty_to_none(value: str | None) -> str | None:
-    if value is None or value == "":
+    def _legacy_split_competitors(self, value) -> list[str]:
+        if not value:
+            return []
+
+        return [
+            item.strip()
+            for item in str(value).replace(";", ",").split(",")
+            if item.strip()
+        ]
+
+    def _legacy_bool(self, value):
+        if value is None:
+            return None
+
+        text = str(value).strip().lower()
+        if not text:
+            return None
+
+        if text in {"true", "1", "yes", "y", "own", "owned"}:
+            return True
+
+        if text in {"false", "0", "no", "n", "competitor"}:
+            return False
+
         return None
-    return value
 
-
-def _to_bool_or_none(value: str | None) -> bool | None:
-    if value is None or value == "":
-        return None
-    normalized = value.strip().lower()
-    if normalized in {"true", "1", "yes", "y", "own", "owned", "transsion"}:
-        return True
-    if normalized in {"false", "0", "no", "n", "competitor", "other"}:
-        return False
-    return None
-
-
-def _infer_own_brand(
-    explicit_value: str | None,
-    brand: str | None,
-    product_name: str | None,
-) -> bool | None:
-    explicit = _to_bool_or_none(explicit_value)
-    if explicit is not None:
-        return explicit
-
-    brand_norm = (brand or "").strip().lower()
-    name_norm = (product_name or "").strip().lower()
-
-    if brand_norm in OWN_BRAND_NAMES or any(item in name_norm for item in OWN_BRAND_NAMES):
-        return True
-
-    if brand_norm in KNOWN_COMPETITOR_BRANDS:
-        return False
-
-    return None
-
-
-def _split_competitors(value: str | None) -> list[str]:
-    if not value:
-        return []
-    return [item.strip() for item in value.replace(";", ",").split(",") if item.strip()]

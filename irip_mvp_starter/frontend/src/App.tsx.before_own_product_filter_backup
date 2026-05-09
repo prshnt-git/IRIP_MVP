@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ReactECharts from "echarts-for-react";
 import {
   AlertTriangle,
@@ -2008,13 +2008,7 @@ function RightControlPanel({
             onChange={(event) => onProductChange(event.target.value)}
         >
             {productsLoading ? <option>Loading products…</option> : null}
-            {products
-              .filter((product) => {
-                const item = product as ProductItem & { brand?: string | null; own_brand?: boolean | null };
-                const brand = String(item.brand || "").trim().toLowerCase();
-                return item.own_brand === true || ["tecno", "infinix", "itel"].includes(brand);
-              })
-              .map((product) => (
+            {products.map((product) => (
               <option key={product.product_id} value={product.product_id}>
                 {product.product_name || product.product_id}
               </option>

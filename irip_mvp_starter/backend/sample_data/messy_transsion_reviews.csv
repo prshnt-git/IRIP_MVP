@@ -1,0 +1,10 @@
+﻿review_id,product_name,brand,source,marketplace,raw_text,rating,review_date
+pova_r1,Tecno POVA7 Pro 5G,,manual_csv,flipkart,Camera looks sharp and gaming performance feels smooth,4,2026-05-01
+pova_r2,POVA 7 Pro 5G,TECNO,manual_csv,flipkart,Battery backup is strong but phone heats during long gaming,3,2026-05-02
+pova_r3,TECNO Pova 7 Pro 5G,TECNO,manual_csv,flipkart,Display is bright and scrolling feels smooth,5,2026-05-03
+infinix_r1,Infinix Note50x 5G+,,manual_csv,flipkart,Performance is fast for daily use and camera is decent,4,2026-05-01
+infinix_r2,Note 50x 5G Plus,Infinix,manual_csv,flipkart,Battery is okay but charging could be faster,3,2026-05-02
+itel_r1,i tel A95 5G,,manual_csv,flipkart,5G works fine and display is good for the price,4,2026-05-01
+itel_r2,itel A95 5G,itel,manual_csv,flipkart,Speaker is loud but camera is average,3,2026-05-02
+dup_itel,itel A95 5G,itel,manual_csv,flipkart,Speaker is loud but camera is average,3,2026-05-02
+bad_1,Unknown Phone,,manual_csv,flipkart,This should remain unresolved,4,2026-05-01
