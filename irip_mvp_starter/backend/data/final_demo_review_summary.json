@@ -1,0 +1,18 @@
+{
+  "version": "V1.2-final-demo-proof-pack",
+  "created_at": "2026-05-10T07:19:03+00:00",
+  "scope": "Only products launched from Nov 2025 to May 2026",
+  "final_products": [
+    "infinix_note_60_pro",
+    "realme_narzo_90x_5g"
+  ],
+  "total_clean_reviews": 67,
+  "review_count_by_product": {
+    "infinix_note_60_pro": 45,
+    "realme_narzo_90x_5g": 22
+  },
+  "files": {
+    "final_review_feed": "data\\final_demo_review_feed.csv",
+    "summary": "data\\final_demo_review_summary.json"
+  }
+}
