@@ -1,6 +1,7 @@
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 
 from app.core.config import get_settings
@@ -81,6 +82,19 @@ from app.services.visualization_service import VisualizationService
 settings = get_settings()
 
 app = FastAPI(title=settings.app_name, version=settings.app_version)
+
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "https://irip-mvp.vercel.app",
+    ],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 router = ResourceRouter()
 
