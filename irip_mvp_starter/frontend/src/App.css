@@ -3164,3 +3164,151 @@ button {
   gap: 10px !important;
 }
 
+
+/* === IRIP FINAL REPORT-ONLY SCROLL FIX === */
+/* Keep the full-screen app shell fixed. Only the Report tab content scrolls. */
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+.irip-app-shell {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: 70px minmax(0, 1fr);
+}
+
+.irip-body-grid,
+.irip-left-workspace,
+.irip-main-tile {
+  min-height: 0;
+}
+
+.irip-body-grid {
+  overflow: hidden;
+}
+
+.irip-left-workspace {
+  overflow: hidden;
+}
+
+.irip-main-tile {
+  overflow: hidden;
+}
+
+.main-visual-content {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Only Report tab scrolls internally. Other tabs keep their existing fixed layout. */
+.main-visual-content.report-scroll-content {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding-right: 8px;
+  scrollbar-width: thin;
+  scroll-behavior: smooth;
+}
+
+.main-visual-content.report-scroll-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.main-visual-content.report-scroll-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.main-visual-content.report-scroll-content::-webkit-scrollbar-thumb {
+  background: rgba(98, 87, 142, 0.28);
+  border-radius: 999px;
+}
+
+/* Report should naturally stack vertically inside the scroll container. */
+.main-visual-content.report-scroll-content .report-view {
+  height: auto !important;
+  min-height: 100%;
+  overflow: visible !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 16px !important;
+  padding-bottom: 72px !important;
+}
+
+.main-visual-content.report-scroll-content .report-preview-grid,
+.main-visual-content.report-scroll-content .summary-view-grid,
+.main-visual-content.report-scroll-content .kpi-card-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)) !important;
+  gap: 14px !important;
+  align-items: stretch !important;
+}
+
+.main-visual-content.report-scroll-content .report-preview-card,
+.main-visual-content.report-scroll-content .report-decision-card,
+.main-visual-content.report-scroll-content .report-modal-section,
+.main-visual-content.report-scroll-content .summary-panel,
+.main-visual-content.report-scroll-content .kpi-card {
+  height: auto !important;
+  min-height: 112px;
+  overflow: visible !important;
+}
+
+.main-visual-content.report-scroll-content .report-preview-card p,
+.main-visual-content.report-scroll-content .report-decision-card p,
+.main-visual-content.report-scroll-content .report-modal-item p,
+.main-visual-content.report-scroll-content .summary-panel p,
+.main-visual-content.report-scroll-content .summary-panel small,
+.main-visual-content.report-scroll-content .kpi-card p {
+  display: block !important;
+  white-space: normal !important;
+  overflow: visible !important;
+  max-height: none !important;
+  -webkit-line-clamp: unset !important;
+  line-clamp: unset !important;
+  line-height: 1.5 !important;
+}
+
+.main-visual-content.report-scroll-content .report-modal-section {
+  flex: 0 0 auto;
+  padding: 18px 20px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(116, 105, 145, 0.16);
+}
+
+.main-visual-content.report-scroll-content .report-modal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+.main-visual-content.report-scroll-content .report-modal-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(248, 247, 252, 0.9);
+}
+
+/* Report menu already exists; remove duplicate modal CTA buttons. */
+.summary-view .button-pair .micro-button.primary,
+.report-view .button-pair .micro-button.primary {
+  display: none !important;
+}
+
+/* Requested right rail cleanup. */
+.right-control-panel .trust-panel,
+.right-control-panel .panel-action-stack {
+  display: none !important;
+}

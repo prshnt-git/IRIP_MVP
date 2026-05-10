@@ -1053,7 +1053,7 @@ function MainVisualTile({
   onOpenReport: () => void;
 }) {
   return (
-    <div className="main-visual-content">
+    <div className={activeView === "report" ? "main-visual-content report-scroll-content" : "main-visual-content"}>
       {activeView === "overview" ? (
         <OverviewView dashboard={dashboard} report={report} onOpenEvidence={onOpenEvidence} />
       ) : activeView === "summary" ? (
@@ -1130,8 +1130,8 @@ function SummaryView({
   onOpenReport: () => void;
 }) {
   const insightCards = buildUserInsightCards(dashboard, report);
-  const topStrength = insightCards.find((item) => item.id === "customer_signal")?.title || "No clear strength yet.";
-  const topRisk = insightCards.find((item) => item.id === "risk_signal")?.title || "No clear risk yet.";
+  const topStrength = insightCards.find((item) => item.id === "customer_like")?.title || "No clear strength yet.";
+  const topRisk = insightCards.find((item) => item.id === "customer_complaint")?.title || "No clear risk yet.";
   const confidence = buildEvidenceLevel(dashboard, report);
   const nextActions = dashboard.recommended_actions?.length
     ? dashboard.recommended_actions.map(cleanThemeText)
@@ -1616,22 +1616,29 @@ function ReportView({
   onOpenReport: () => void;
   onOpenEvidence: () => void;
 }) {
-  if (!report) {
-    return <EmptyCard title="Report unavailable" text="Generate the workspace to load the report." />;
-  }
-
+  const reviewCount = getReviewCount(dashboard);
+  const confidence = buildEvidenceLevel(dashboard, report);
+  const overviewKpis = buildOverviewKpis(dashboard);
+  const sentiment = buildSentimentRead(dashboard);
+  const aspectCards = dashboard.aspect_reason_cards || [];
+  const topAspects = dashboard.top_aspect_chart?.data || [];
+  const benchmarkRows = dashboard.competitor_gap_chart?.data || [];
+  const specRows = dashboard.benchmark_spec_table?.rows || [];
   const cleanBullets = getCleanReportBullets(report);
-  const insightCards = buildUserInsightCards(dashboard, report);
-  const strength = insightCards.find((item) => item.id === "customer_signal")?.title || "No strong positive signal yet.";
-  const risk = insightCards.find((item) => item.id === "risk_signal")?.title || "No strong risk signal yet.";
-  const action = cleanThemeText(pickFirst(report.recommended_actions, "Import more reviews and validate key signals."));
+  const actions = dashboard.recommended_actions?.length
+    ? dashboard.recommended_actions.map(cleanThemeText)
+    : report?.recommended_actions.map(cleanThemeText) || [];
+
+  const strengths = report?.key_strengths?.map(cleanThemeText) || [];
+  const risks = report?.key_risks?.map(cleanThemeText) || [];
+  const competitorTakeaways = report?.competitor_takeaways?.map(cleanThemeText) || [];
 
   return (
     <div className="report-view">
       <div className="tile-section-header">
         <div>
-          <p className="irip-eyebrow">Decision report</p>
-          <h2>What the team should take away</h2>
+          <p className="irip-eyebrow">Executive report</p>
+          <h2>Automated product intelligence brief</h2>
         </div>
         <div className="button-pair">
           <button className="micro-button" type="button" onClick={onOpenEvidence}>
@@ -1645,44 +1652,169 @@ function ReportView({
 
       <div className="report-preview-grid">
         <section className="report-preview-card wide">
+          <span>Executive Snapshot</span>
+          <p>
+            {sentiment.title} This report is generated from {reviewCount} usable review(s), aspect signals,
+            benchmark gaps, and evidence links.
+          </p>
+        </section>
+
+        <section className="report-preview-card">
           <span>Confidence</span>
-          <p>{report.confidence_note}</p>
+          <p>{confidence.label}</p>
+          <small>{confidence.text}</small>
         </section>
 
         <section className="report-preview-card">
-          <span>Strength</span>
-          <p>{strength}</p>
-        </section>
-
-        <section className="report-preview-card">
-          <span>Risk</span>
-          <p>{risk}</p>
+          <span>Review Base</span>
+          <p>{reviewCount} usable reviews</p>
+          <small>{reviewCount < 30 ? "Early signal" : "Directional evidence"}</small>
         </section>
       </div>
 
-      <div className="report-decision-card">
-        <span>Recommended decision path</span>
-        <p>{action}</p>
+      <KpiCardGrid cards={overviewKpis} />
+
+      <section className="report-decision-card">
+        <span>Dataset interpretation</span>
+        <p>
+          {confidence.helper} Catalog-only products such as TECNO POVA Curve 2 5G and itel Zeno 200 should be
+          shown as coverage gaps unless reviews are imported for them.
+        </p>
+      </section>
+
+      <div className="summary-view-grid">
+        <section className="summary-panel strength">
+          <span>Positive Signals</span>
+          <p>{strengths[0] || "No strong positive signal available yet."}</p>
+        </section>
+
+        <section className="summary-panel risk">
+          <span>Risk Signals</span>
+          <p>{risks[0] || "No strong risk signal available yet."}</p>
+        </section>
+
+        <section className="summary-panel confidence">
+          <span>Competitor Context</span>
+          <p>{competitorTakeaways[0] || "Select a competitor to strengthen benchmark interpretation."}</p>
+        </section>
       </div>
 
-      <div className="report-bullets">
-        {cleanBullets.length ? (
-          cleanBullets.map((item) => (
+      <section className="report-modal-section">
+        <h3>Aspect Intelligence</h3>
+        <div className="report-modal-list">
+          {aspectCards.length ? (
+            aspectCards.slice(0, 8).map((item) => (
+              <div className="report-modal-item" key={`${item.aspect}-${item.reaction}`}>
+                <span />
+                <p>
+                  <strong>{labelize(item.aspect)}:</strong> {item.one_liner} ({item.mention_count} mention(s),{" "}
+                  {item.confidence_label})
+                </p>
+              </div>
+            ))
+          ) : topAspects.length ? (
+            topAspects.slice(0, 8).map((item) => (
+              <div className="report-modal-item" key={item.label}>
+                <span />
+                <p>
+                  <strong>{labelize(item.label)}:</strong> {item.value} mention(s). {item.helper_text || ""}
+                </p>
+              </div>
+            ))
+          ) : (
+            <div className="report-modal-item">
+              <span />
+              <p>No aspect-level evidence is available yet.</p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="report-modal-section">
+        <h3>Competitor Benchmark</h3>
+        <div className="report-modal-list">
+          {benchmarkRows.length ? (
+            benchmarkRows.slice(0, 8).map((item) => (
+              <div className="report-modal-item" key={`${item.aspect}-${item.gap}`}>
+                <span />
+                <p>
+                  <strong>{labelize(item.aspect)}:</strong> {cleanBenchmarkSummaryText(item.interpretation)}{" "}
+                  ({item.confidence_label})
+                </p>
+              </div>
+            ))
+          ) : (
+            <div className="report-modal-item">
+              <span />
+              <p>Select a competitor to generate product-vs-competitor benchmark findings.</p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="report-modal-section">
+        <h3>Spec Comparison Coverage</h3>
+        <div className="report-modal-list">
+          {specRows.length ? (
+            specRows.slice(0, 8).map((item) => (
+              <div className="report-modal-item" key={`${item.category}-${item.field}`}>
+                <span />
+                <p>
+                  <strong>{item.field}:</strong> {formatSpecValue(item.selected_product_value)} vs{" "}
+                  {formatSpecValue(item.competitor_value)}. {item.why_it_matters || ""}
+                </p>
+              </div>
+            ))
+          ) : (
+            <div className="report-modal-item">
+              <span />
+              <p>No verified spec comparison table is available for this selection.</p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="report-modal-section">
+        <h3>Recommended Actions</h3>
+        <div className="report-modal-list">
+          {actions.length ? (
+            actions.slice(0, 8).map((action, index) => (
+              <div className="report-modal-item" key={`${action}-${index}`}>
+                <span />
+                <p>{action}</p>
+              </div>
+            ))
+          ) : (
+            <div className="report-modal-item">
+              <span />
+              <p>Import more recent reviews and validate the strongest aspect signals.</p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="report-decision-card">
+        <span>Gemini / external report workflow</span>
+        <p>
+          Use the Open Workspace button for the final review feed, cleaning reports, and Gemini report input.
+          Gemini should be used for polished narrative only; the in-app report remains generated from backend data.
+        </p>
+      </section>
+
+      {cleanBullets.length ? (
+        <div className="report-bullets">
+          {cleanBullets.map((item) => (
             <div className="report-bullet" key={item}>
               <span />
               <p>{item}</p>
             </div>
-          ))
-        ) : (
-          <EmptyCard
-            title="Not enough clean report evidence"
-            text="Import more real reviews or open the full report for raw evidence."
-          />
-        )}
-      </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
+
 
 function KpiCardGrid({ cards }: { cards: KpiCard[] }) {
   return (
