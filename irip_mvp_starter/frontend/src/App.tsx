@@ -22,6 +22,7 @@ import {
 import "./App.css";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") || "/api";
+const IRIP_DATA_WORKSPACE_URL = "https://docs.google.com/spreadsheets/d/1whhBvVjxHpOEqgY7JCGcjM0TXYh4dVlEIFhSRs9gnQI/edit?coid=1059348359&pli=1&gid=518385256#gid=518385256";
 
 type ViewKey =
   | "overview"
@@ -698,7 +699,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
 
   const [importUrl, setImportUrl] = useState("");
-  const [importPreview, setImportPreview] = useState<ImportPreviewResponse | null>(null);
+  const [importPreview] = useState<ImportPreviewResponse | null>(null);
   const [importStatus, setImportStatus] = useState<"idle" | "previewing" | "importing" | "success" | "error">(
     "idle"
   );
@@ -803,28 +804,8 @@ export default function App() {
     }
   }
 
-  async function handlePreviewImport() {
-    if (!importUrl.trim()) {
-      setImportStatus("error");
-      setError("Paste a CSV or Google Sheet CSV URL first.");
-      return;
-    }
-
-    setImportStatus("previewing");
-    setError(null);
-
-    try {
-      const preview = await apiPost<ImportPreviewResponse>("/reviews/import-csv-url-preview", {
-        url: importUrl.trim(),
-      });
-
-      setImportPreview(preview);
-      setImportOpen(true);
-      setImportStatus("idle");
-    } catch (err) {
-      setImportStatus("error");
-      setError(err instanceof Error ? err.message : "Import preview failed.");
-    }
+  function handlePreviewImport() {
+    window.open(IRIP_DATA_WORKSPACE_URL, "_blank", "noopener,noreferrer");
   }
 
   async function handleFinalImport() {
@@ -1011,8 +992,8 @@ function TopImportBar({
         </div>
 
         <button className="top-action-button primary" type="button" onClick={onPreviewImport}>
-          {importStatus === "previewing" ? <Loader2 className="spin" size={15} /> : <UploadCloud size={15} />}
-          <span>{importStatus === "previewing" ? "Previewing" : "Preview Import"}</span>
+          <UploadCloud size={15} />
+          <span>{importStatus === "previewing" ? "Opening Workspace" : "Open Workspace"}</span>
         </button>
 
         <button className="top-action-button ghost" type="button" onClick={onDownloadReport}>
