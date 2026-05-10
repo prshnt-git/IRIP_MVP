@@ -1,0 +1,148 @@
+{
+  "input_count": 51,
+  "clean_count": 24,
+  "removed_count": 24,
+  "duplicate_count": 3,
+  "removed_examples": [
+    {
+      "row_number": 3,
+      "reason": "helpful_count_only",
+      "product_name": "iQOO Z11x 5G",
+      "raw_text": "Helpful for 66",
+      "review_title": ""
+    },
+    {
+      "row_number": 4,
+      "reason": "metadata_only",
+      "product_name": "iQOO Z11x 5G",
+      "raw_text": "Verified Purchase",
+      "review_title": "· 1 month ago"
+    },
+    {
+      "row_number": 7,
+      "reason": "helpful_count_only",
+      "product_name": "iQOO Z11x 5G",
+      "raw_text": "Helpful for 30",
+      "review_title": ""
+    },
+    {
+      "row_number": 9,
+      "reason": "helpful_count_only",
+      "product_name": "iQOO Z11x 5G",
+      "raw_text": "Helpful for 3",
+      "review_title": ""
+    },
+    {
+      "row_number": 11,
+      "reason": "helpful_count_only",
+      "product_name": "iQOO Z11x 5G",
+      "raw_text": "Helpful for 9",
+      "review_title": ""
+    },
+    {
+      "row_number": 13,
+      "reason": "helpful_count_only",
+      "product_name": "iQOO Z11x 5G",
+      "raw_text": "Helpful for 7",
+      "review_title": ""
+    },
+    {
+      "row_number": 15,
+      "reason": "helpful_count_only",
+      "product_name": "iQOO Z11x 5G",
+      "raw_text": "Helpful for 2",
+      "review_title": ""
+    },
+    {
+      "row_number": 21,
+      "reason": "helpful_count_only",
+      "product_name": "iQOO Z11x 5G",
+      "raw_text": "Helpful for 5",
+      "review_title": ""
+    },
+    {
+      "row_number": 24,
+      "reason": "helpful_count_only",
+      "product_name": "iQOO Z11x 5G",
+      "raw_text": "Helpful for 1",
+      "review_title": ""
+    },
+    {
+      "row_number": 25,
+      "reason": "helpful_count_only",
+      "product_name": "iQOO Z11x 5G",
+      "raw_text": "Helpful for 1",
+      "review_title": ""
+    },
+    {
+      "row_number": 27,
+      "reason": "metadata_only",
+      "product_name": "iQOO Z11x 5G",
+      "raw_text": "Review for: Color Titan Black • RAM 6 GB • Storage 128 GB",
+      "review_title": ""
+    },
+    {
+      "row_number": 28,
+      "reason": "metadata_only",
+      "product_name": "iQOO Z11x 5G",
+      "raw_text": "Flipkart Customer",
+      "review_title": ""
+    },
+    {
+      "row_number": 29,
+      "reason": "metadata_only",
+      "product_name": "iQOO Z11x 5G",
+      "raw_text": "Review for: Color Prismatic Green • RAM 6 GB • Storage 128 GB",
+      "review_title": ""
+    },
+    {
+      "row_number": 31,
+      "reason": "metadata_only",
+      "product_name": "iQOO Z11x 5G",
+      "raw_text": "Verified Purchase",
+      "review_title": ""
+    },
+    {
+      "row_number": 32,
+      "reason": "metadata_only",
+      "product_name": "iQOO Z11x 5G",
+      "raw_text": "Verified Purchase",
+      "review_title": ""
+    },
+    {
+      "row_number": 34,
+      "reason": "metadata_only",
+      "product_name": "iQOO Z11x 5G",
+      "raw_text": "Rajesh (Kutti) Baidya",
+      "review_title": ""
+    },
+    {
+      "row_number": 35,
+      "reason": "metadata_only",
+      "product_name": "iQOO Z11x 5G",
+      "raw_text": "Verified Purchase",
+      "review_title": "· 4 days ago"
+    },
+    {
+      "row_number": 37,
+      "reason": "metadata_only",
+      "product_name": "iQOO Z11x 5G",
+      "raw_text": "cheitei Thounaojam",
+      "review_title": ""
+    },
+    {
+      "row_number": 38,
+      "reason": "metadata_only",
+      "product_name": "iQOO Z11x 5G",
+      "raw_text": "Verified Purchase",
+      "review_title": "· 5 days ago"
+    },
+    {
+      "row_number": 44,
+      "reason": "metadata_only",
+      "product_name": "iQOO Z11x 5G",
+      "raw_text": ", Bhilwara District",
+      "review_title": ""
+    }
+  ]
+}

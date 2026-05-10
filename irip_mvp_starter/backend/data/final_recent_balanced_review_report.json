@@ -1,0 +1,58 @@
+{
+  "input_count": 91,
+  "deduped_count": 91,
+  "min_per_product": 20,
+  "max_per_product": 240,
+  "quota_by_rating": {
+    "5": 84,
+    "4": 60,
+    "3": 36,
+    "2": 24,
+    "1": 36
+  },
+  "products": {
+    "infinix_note_60_pro": {
+      "available_clean_rows": 45,
+      "selected_rows": 45,
+      "meets_minimum": true,
+      "rating_counts": {
+        "1": 6,
+        "2": 2,
+        "3": 1,
+        "4": 8,
+        "5": 28,
+        "unknown": 0
+      },
+      "note": "Meets 200-review target"
+    },
+    "realme_narzo_90x_5g": {
+      "available_clean_rows": 22,
+      "selected_rows": 22,
+      "meets_minimum": true,
+      "rating_counts": {
+        "1": 3,
+        "2": 1,
+        "3": 0,
+        "4": 5,
+        "5": 13,
+        "unknown": 0
+      },
+      "note": "Meets 200-review target"
+    },
+    "iqoo_z_11x_5g": {
+      "available_clean_rows": 24,
+      "selected_rows": 24,
+      "meets_minimum": true,
+      "rating_counts": {
+        "1": 3,
+        "2": 1,
+        "3": 2,
+        "4": 2,
+        "5": 16,
+        "unknown": 0
+      },
+      "note": "Meets 200-review target"
+    }
+  },
+  "output_count": 91
+}

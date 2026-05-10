@@ -171,6 +171,8 @@ class FlipkartReviewCollector:
                 else:
                     print("[warn] review URL not found; trying current product page")
 
+                consecutive_empty_pages = 0
+
                 for page_no in range(1, self.max_pages + 1):
                     self._close_popups(page)
                     self._scroll_page(page)
@@ -201,6 +203,15 @@ class FlipkartReviewCollector:
                             break
 
                     print(f"[page {page_no}] found={len(page_reviews)} new={new_count} total={len(reviews)}")
+
+                    if new_count == 0:
+                        consecutive_empty_pages += 1
+                    else:
+                        consecutive_empty_pages = 0
+
+                    if consecutive_empty_pages >= 3 and len(reviews) > 0:
+                        print("[stop] 3 consecutive pages with 0 new reviews")
+                        break
 
                     if len(reviews) >= self.max_reviews:
                         break
