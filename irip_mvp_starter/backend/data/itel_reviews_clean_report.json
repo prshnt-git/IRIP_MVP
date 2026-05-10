@@ -1,0 +1,22 @@
+{
+  "input_count": 3,
+  "clean_count": 1,
+  "removed_count": 2,
+  "duplicate_count": 0,
+  "removed_examples": [
+    {
+      "row_number": 3,
+      "reason": "helpful_count_only",
+      "product_name": "itel A95 5G",
+      "raw_text": "Helpful for 9",
+      "review_title": "R A T A N KAR"
+    },
+    {
+      "row_number": 4,
+      "reason": "metadata_only",
+      "product_name": "itel A95 5G",
+      "raw_text": "Verified Purchase",
+      "review_title": "· 3 months ago"
+    }
+  ]
+}

@@ -1,0 +1,141 @@
+{
+  "input_count": 70,
+  "clean_count": 50,
+  "removed_count": 19,
+  "duplicate_count": 1,
+  "removed_examples": [
+    {
+      "row_number": 3,
+      "reason": "helpful_count_only",
+      "product_name": "Realme Narzo 70x 5G",
+      "raw_text": "Helpful for 24",
+      "review_title": ""
+    },
+    {
+      "row_number": 9,
+      "reason": "location_like_text",
+      "product_name": "Realme Narzo 70x 5G",
+      "raw_text": ", Ahmedabad",
+      "review_title": ""
+    },
+    {
+      "row_number": 11,
+      "reason": "helpful_count_only",
+      "product_name": "Realme Narzo 70x 5G",
+      "raw_text": "Helpful for 5",
+      "review_title": ""
+    },
+    {
+      "row_number": 13,
+      "reason": "helpful_count_only",
+      "product_name": "Realme Narzo 70x 5G",
+      "raw_text": "Helpful for 4",
+      "review_title": ""
+    },
+    {
+      "row_number": 16,
+      "reason": "helpful_count_only",
+      "product_name": "Realme Narzo 70x 5G",
+      "raw_text": "Helpful for 11",
+      "review_title": ""
+    },
+    {
+      "row_number": 19,
+      "reason": "metadata_only",
+      "product_name": "Realme Narzo 70x 5G",
+      "raw_text": "Helpful for",
+      "review_title": ""
+    },
+    {
+      "row_number": 20,
+      "reason": "metadata_only",
+      "product_name": "Realme Narzo 70x 5G",
+      "raw_text": "Helpful for",
+      "review_title": ""
+    },
+    {
+      "row_number": 24,
+      "reason": "metadata_only",
+      "product_name": "Realme Narzo 70x 5G",
+      "raw_text": "Helpful for",
+      "review_title": ""
+    },
+    {
+      "row_number": 27,
+      "reason": "metadata_only",
+      "product_name": "Realme Narzo 70x 5G",
+      "raw_text": "Helpful for",
+      "review_title": ""
+    },
+    {
+      "row_number": 29,
+      "reason": "metadata_only",
+      "product_name": "Realme Narzo 70x 5G",
+      "raw_text": "Helpful for",
+      "review_title": "Good"
+    },
+    {
+      "row_number": 30,
+      "reason": "metadata_only",
+      "product_name": "Realme Narzo 70x 5G",
+      "raw_text": "Helpful for",
+      "review_title": ""
+    },
+    {
+      "row_number": 32,
+      "reason": "helpful_count_only",
+      "product_name": "Realme Narzo 70x 5G",
+      "raw_text": "Helpful for 3",
+      "review_title": ""
+    },
+    {
+      "row_number": 34,
+      "reason": "location_like_text",
+      "product_name": "Realme Narzo 70x 5G",
+      "raw_text": ", Allahabad",
+      "review_title": ""
+    },
+    {
+      "row_number": 36,
+      "reason": "helpful_count_only",
+      "product_name": "Realme Narzo 70x 5G",
+      "raw_text": "Helpful for 1",
+      "review_title": ""
+    },
+    {
+      "row_number": 38,
+      "reason": "helpful_count_only",
+      "product_name": "Realme Narzo 70x 5G",
+      "raw_text": "Helpful for 1",
+      "review_title": ""
+    },
+    {
+      "row_number": 43,
+      "reason": "metadata_only",
+      "product_name": "Realme Narzo 70x 5G",
+      "raw_text": "Review for: Color FOREST GREEN • RAM 6 GB • Storage 128 GB",
+      "review_title": ""
+    },
+    {
+      "row_number": 59,
+      "reason": "location_or_address",
+      "product_name": "Realme Narzo 70x 5G",
+      "raw_text": ", Murshidabad District",
+      "review_title": ""
+    },
+    {
+      "row_number": 60,
+      "reason": "metadata_only",
+      "product_name": "Realme Narzo 70x 5G",
+      "raw_text": "Verified Purchase",
+      "review_title": "· 4 months ago"
+    },
+    {
+      "row_number": 70,
+      "reason": "metadata_only",
+      "product_name": "Realme Narzo 70x 5G",
+      "raw_text": "Review for: Color ICE BLUE • RAM 6 GB • Storage 128 GB",
+      "review_title": ""
+    }
+  ]
+}

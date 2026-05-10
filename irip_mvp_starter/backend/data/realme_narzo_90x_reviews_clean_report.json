@@ -1,0 +1,148 @@
+{
+  "input_count": 52,
+  "clean_count": 22,
+  "removed_count": 30,
+  "duplicate_count": 0,
+  "removed_examples": [
+    {
+      "row_number": 3,
+      "reason": "helpful_count_only",
+      "product_name": "Realme Narzo 90x 5G",
+      "raw_text": "Helpful for 98",
+      "review_title": ""
+    },
+    {
+      "row_number": 4,
+      "reason": "metadata_only",
+      "product_name": "Realme Narzo 90x 5G",
+      "raw_text": "Verified Purchase",
+      "review_title": "· 3 months ago"
+    },
+    {
+      "row_number": 6,
+      "reason": "helpful_count_only",
+      "product_name": "Realme Narzo 90x 5G",
+      "raw_text": "Helpful for 22",
+      "review_title": ""
+    },
+    {
+      "row_number": 7,
+      "reason": "helpful_count_only",
+      "product_name": "Realme Narzo 90x 5G",
+      "raw_text": "Helpful for 6",
+      "review_title": ""
+    },
+    {
+      "row_number": 8,
+      "reason": "helpful_count_only",
+      "product_name": "Realme Narzo 90x 5G",
+      "raw_text": "Helpful for 6",
+      "review_title": ""
+    },
+    {
+      "row_number": 9,
+      "reason": "metadata_only",
+      "product_name": "Realme Narzo 90x 5G",
+      "raw_text": "Verified Purchase",
+      "review_title": "· 2 months ago"
+    },
+    {
+      "row_number": 12,
+      "reason": "helpful_count_only",
+      "product_name": "Realme Narzo 90x 5G",
+      "raw_text": "Helpful for 33",
+      "review_title": ""
+    },
+    {
+      "row_number": 14,
+      "reason": "helpful_count_only",
+      "product_name": "Realme Narzo 90x 5G",
+      "raw_text": "Helpful for 8",
+      "review_title": ""
+    },
+    {
+      "row_number": 16,
+      "reason": "helpful_count_only",
+      "product_name": "Realme Narzo 90x 5G",
+      "raw_text": "Helpful for 13",
+      "review_title": ""
+    },
+    {
+      "row_number": 18,
+      "reason": "helpful_count_only",
+      "product_name": "Realme Narzo 90x 5G",
+      "raw_text": "Helpful for 10",
+      "review_title": ""
+    },
+    {
+      "row_number": 20,
+      "reason": "helpful_count_only",
+      "product_name": "Realme Narzo 90x 5G",
+      "raw_text": "Helpful for 2",
+      "review_title": ""
+    },
+    {
+      "row_number": 21,
+      "reason": "helpful_count_only",
+      "product_name": "Realme Narzo 90x 5G",
+      "raw_text": "Helpful for 1",
+      "review_title": "Good"
+    },
+    {
+      "row_number": 22,
+      "reason": "helpful_count_only",
+      "product_name": "Realme Narzo 90x 5G",
+      "raw_text": "Helpful for 1",
+      "review_title": ""
+    },
+    {
+      "row_number": 27,
+      "reason": "location_like_text",
+      "product_name": "Realme Narzo 90x 5G",
+      "raw_text": ", Dhanbad",
+      "review_title": "Awesome"
+    },
+    {
+      "row_number": 28,
+      "reason": "location_like_text",
+      "product_name": "Realme Narzo 90x 5G",
+      "raw_text": ", Dhanbad",
+      "review_title": ""
+    },
+    {
+      "row_number": 30,
+      "reason": "metadata_only",
+      "product_name": "Realme Narzo 90x 5G",
+      "raw_text": "Review for: Color Maroon Red • RAM 8 GB • Storage 128 GB",
+      "review_title": ""
+    },
+    {
+      "row_number": 33,
+      "reason": "metadata_only",
+      "product_name": "Realme Narzo 90x 5G",
+      "raw_text": "Review for: Color Nitro Blue • RAM 8 GB • Storage 128 GB",
+      "review_title": ""
+    },
+    {
+      "row_number": 34,
+      "reason": "metadata_only",
+      "product_name": "Realme Narzo 90x 5G",
+      "raw_text": "Flipkart Customer",
+      "review_title": ""
+    },
+    {
+      "row_number": 35,
+      "reason": "metadata_only",
+      "product_name": "Realme Narzo 90x 5G",
+      "raw_text": "Verified Purchase",
+      "review_title": "· 1 month ago"
+    },
+    {
+      "row_number": 38,
+      "reason": "location_or_address",
+      "product_name": "Realme Narzo 90x 5G",
+      "raw_text": ", Udham Singh Nagar District",
+      "review_title": ""
+    }
+  ]
+}

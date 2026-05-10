@@ -529,6 +529,23 @@ def list_products():
         )
     )
 
+
+    # Final demo scope: only products launched from Nov 2025 to May 2026.
+    # Old/test products remain internally available but are hidden from the user-facing product list.
+    final_demo_product_ids = {
+        "infinix_note_60_pro",
+        "itel_zeno_200",
+        "tecno_pova_curve_2_5g",
+        "realme_narzo_90x_5g",
+        "iqoo_z_11x_5g",
+    }
+
+    products = [
+        product
+        for product in products
+        if product.get("product_id") in final_demo_product_ids
+    ]
+
     return products
 @app.get("/products/catalog")
 def list_product_catalog(own_only: bool | None = None):

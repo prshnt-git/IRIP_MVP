@@ -1,0 +1,148 @@
+{
+  "input_count": 78,
+  "clean_count": 45,
+  "removed_count": 26,
+  "duplicate_count": 7,
+  "removed_examples": [
+    {
+      "row_number": 2,
+      "reason": "helpful_count_only",
+      "product_name": "Infinix Note 60 Pro",
+      "raw_text": "Helpful for 72",
+      "review_title": ""
+    },
+    {
+      "row_number": 5,
+      "reason": "helpful_count_only",
+      "product_name": "Infinix Note 60 Pro",
+      "raw_text": "Helpful for 29",
+      "review_title": ""
+    },
+    {
+      "row_number": 8,
+      "reason": "helpful_count_only",
+      "product_name": "Infinix Note 60 Pro",
+      "raw_text": "Helpful for 16",
+      "review_title": ""
+    },
+    {
+      "row_number": 9,
+      "reason": "junk_token",
+      "product_name": "Infinix Note 60 Pro",
+      "raw_text": "All flipkart customer must buy the phone all features and mobile prfermance very good",
+      "review_title": ""
+    },
+    {
+      "row_number": 12,
+      "reason": "helpful_count_only",
+      "product_name": "Infinix Note 60 Pro",
+      "raw_text": "Helpful for 12",
+      "review_title": ""
+    },
+    {
+      "row_number": 14,
+      "reason": "helpful_count_only",
+      "product_name": "Infinix Note 60 Pro",
+      "raw_text": "Helpful for 13",
+      "review_title": ""
+    },
+    {
+      "row_number": 16,
+      "reason": "helpful_count_only",
+      "product_name": "Infinix Note 60 Pro",
+      "raw_text": "Helpful for 10",
+      "review_title": ""
+    },
+    {
+      "row_number": 19,
+      "reason": "location_like_text",
+      "product_name": "Infinix Note 60 Pro",
+      "raw_text": ", Hyderabad",
+      "review_title": ""
+    },
+    {
+      "row_number": 21,
+      "reason": "helpful_count_only",
+      "product_name": "Infinix Note 60 Pro",
+      "raw_text": "Helpful for 3",
+      "review_title": ""
+    },
+    {
+      "row_number": 23,
+      "reason": "helpful_count_only",
+      "product_name": "Infinix Note 60 Pro",
+      "raw_text": "Helpful for 6",
+      "review_title": ""
+    },
+    {
+      "row_number": 26,
+      "reason": "helpful_count_only",
+      "product_name": "Infinix Note 60 Pro",
+      "raw_text": "Helpful for 2",
+      "review_title": ""
+    },
+    {
+      "row_number": 27,
+      "reason": "metadata_only",
+      "product_name": "Infinix Note 60 Pro",
+      "raw_text": "Verified Purchase",
+      "review_title": "· 5 days ago"
+    },
+    {
+      "row_number": 36,
+      "reason": "metadata_only",
+      "product_name": "Infinix Note 60 Pro",
+      "raw_text": "Verified Purchase",
+      "review_title": "· 4 days ago"
+    },
+    {
+      "row_number": 38,
+      "reason": "helpful_count_only",
+      "product_name": "Infinix Note 60 Pro",
+      "raw_text": "Helpful for 1",
+      "review_title": ""
+    },
+    {
+      "row_number": 39,
+      "reason": "helpful_count_only",
+      "product_name": "Infinix Note 60 Pro",
+      "raw_text": "Helpful for 1",
+      "review_title": ""
+    },
+    {
+      "row_number": 40,
+      "reason": "metadata_only",
+      "product_name": "Infinix Note 60 Pro",
+      "raw_text": "Verified Purchase",
+      "review_title": "· 3 days ago"
+    },
+    {
+      "row_number": 42,
+      "reason": "location_like_text",
+      "product_name": "Infinix Note 60 Pro",
+      "raw_text": ", Faridabad",
+      "review_title": ""
+    },
+    {
+      "row_number": 45,
+      "reason": "metadata_only",
+      "product_name": "Infinix Note 60 Pro",
+      "raw_text": "Review for: Color Solar Orange • RAM 8 GB • Storage 256 GB",
+      "review_title": "Good"
+    },
+    {
+      "row_number": 51,
+      "reason": "helpful_count_only",
+      "product_name": "Infinix Note 60 Pro",
+      "raw_text": "Helpful for 2",
+      "review_title": ""
+    },
+    {
+      "row_number": 57,
+      "reason": "metadata_only",
+      "product_name": "Infinix Note 60 Pro",
+      "raw_text": "Verified Purchase",
+      "review_title": ""
+    }
+  ]
+}
