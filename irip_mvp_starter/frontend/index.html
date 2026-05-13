@@ -2,9 +2,24 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <meta
+      name="description"
+      content="IRIP — India Review Intelligence Platform. AI-powered competitive review analysis for Transsion India smartphone brands."
+    />
+    <meta name="theme-color" content="#7c3aed" />
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <!--
+      Preconnect to the Render backend so the first API call
+      (fetchHealth + fetchProducts) skips DNS + TCP + TLS handshake delay.
+      This directly improves LCP by ~200-400ms on cold page loads.
+    -->
+    <link rel="preconnect" href="https://irip-api.onrender.com" crossorigin />
+    <link rel="dns-prefetch" href="https://irip-api.onrender.com" />
+
+    <title>IRIP — India Review Intelligence Platform</title>
   </head>
   <body>
     <div id="root"></div>

@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from "react";
-import ReactECharts from "echarts-for-react";
+import { lazy, Suspense, useEffect, useRef, useState, useMemo } from "react";
 import {
   AlertTriangle,
   BarChart3,
@@ -33,7 +32,6 @@ import {
   type CompetitorGapDatum,
   type AspectReasonCard,
   type BenchmarkSummary,
-  type BenchmarkSpecTable,
   type ImportPreviewResponse,
   fetchProducts,
   fetchVisualDashboard,
@@ -44,12 +42,18 @@ import {
   ApiError,
 } from "./api";
 import "./App.css";
-import ReportView from "./components/ReportView";
-import SentimentView from "./components/SentimentView";
-import MarketTab from "./components/MarketTab";
-import QualityView from "./components/QualityView";
-import OverviewView from "./components/OverviewView";
 import ErrorBoundary, { EmptyReviewsCard } from "./components/ErrorBoundary";
+
+// ─── Lazy-loaded chunks ──────────────────────────────────────────────────────
+// Each lazy() call creates a separate async chunk loaded only when that tab
+// is first rendered. ECharts (~1.4MB) and the PDF libs (~1.3MB) are never
+// part of the initial JS bundle.
+const ReactECharts = lazy(() => import("echarts-for-react"));
+const ReportView    = lazy(() => import("./components/ReportView"));
+const SentimentView = lazy(() => import("./components/SentimentView"));
+const MarketTab     = lazy(() => import("./components/MarketTab"));
+const QualityView   = lazy(() => import("./components/QualityView"));
+const OverviewView  = lazy(() => import("./components/OverviewView"));
 
 // ============================================================
 // Zustand store — shared selection state
@@ -840,6 +844,7 @@ function MainVisualTile({
           : "main-visual-content"
       }
     >
+      <Suspense fallback={<LoadingTile />}>
       {activeView === "overview" ? (
         <ErrorBoundary label="Overview">
           {needsReviews ? (
@@ -917,6 +922,7 @@ function MainVisualTile({
           />
         </ErrorBoundary>
       )}
+      </Suspense>
     </div>
   );
 }
@@ -1273,14 +1279,23 @@ function EChartCard({
 
       <div className="echart-stage">
         {chart.data.length && chartReady ? (
-          <ReactECharts
-            option={option}
-            notMerge
-            lazyUpdate
-            opts={{ renderer: "canvas" }}
-            style={{ height: "100%", width: "100%", minHeight: 220 }}
-            onChartReady={(instance) => { window.requestAnimationFrame(() => instance.resize()); }}
-          />
+          <Suspense
+            fallback={
+              <div className="chart-loading-shell">
+                <Loader2 className="spin" size={18} />
+                <span>Preparing chart</span>
+              </div>
+            }
+          >
+            <ReactECharts
+              option={option}
+              notMerge
+              lazyUpdate
+              opts={{ renderer: "canvas" }}
+              style={{ height: "100%", width: "100%", minHeight: 220 }}
+              onChartReady={(instance) => { window.requestAnimationFrame(() => instance.resize()); }}
+            />
+          </Suspense>
         ) : chart.data.length ? (
           <div className="chart-loading-shell">
             <Loader2 className="spin" size={18} />
@@ -1874,7 +1889,7 @@ function EmptyCard({ title, text }: { title: string; text: string }) {
   );
 }
 
-// @ts-ignore — retained for reference; superseded by src/components/ReportView.tsx
+// @ts-ignore — superseded by src/components/ReportView.tsx; Terser eliminates this in prod
 function _LegacyReportView({
   report,
   dashboard,
@@ -2044,6 +2059,3 @@ function _LegacyReportView({
   );
 }
 
-// Unused in current UI but kept for future BenchmarkSpecTable display
-type _BenchmarkSpecTableRef = BenchmarkSpecTable;
-void (undefined as unknown as _BenchmarkSpecTableRef);
