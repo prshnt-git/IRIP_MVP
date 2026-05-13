@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     environment: str = "local"
     gemini_api_key: str | None = None
+    # Comma-separated list of Gemini API keys for round-robin rotation.
+    # Takes priority over gemini_api_key when set.
+    # Example: GEMINI_API_KEYS=AIza...key1,AIza...key2,AIza...key3
+    gemini_api_keys: str | None = None
     database_path: str = "data/irip_mvp.db"
 
     # LLM pipeline settings — mirrored from env vars used across the codebase.

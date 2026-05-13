@@ -21,28 +21,32 @@ from app.schemas.llm import (
 
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 
-# Gemini free-tier hard limit: 15 requests per 60-second rolling window.
+# ── Per-key quota ───────────────────────────────────────────────────────────
+# Gemini free tier: 15 RPM per API key.
 _GEMINI_RPM_LIMIT = 15
 _GEMINI_WINDOW_SECONDS = 60.0
 
-# Which HTTP status codes are transient and worth retrying.
-_RETRYABLE_CODES: frozenset[int] = frozenset({429, 500, 503})
+# ── Cooldown after 429 ─────────────────────────────────────────────────────
+_COOLDOWN_SECONDS = 60.0
 
-# Retry / backoff constants.
-_MAX_RETRIES = 3
-_BACKOFF_BASE = 2.0   # seconds — doubles on each attempt
-_BACKOFF_MAX = 60.0   # hard ceiling
+# ── Retry config ───────────────────────────────────────────────────────────
+# 500/503 are server-side transient errors — back off and retry on any key.
+# 429 is a quota error — rotate immediately, no sleep needed.
+_RETRYABLE_SERVER_CODES: frozenset[int] = frozenset({500, 503})
+_BACKOFF_BASE = 2.0    # seconds; doubles per attempt
+_BACKOFF_MAX = 60.0    # hard ceiling
 
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Per-key sliding-window rate limiter
+# ═══════════════════════════════════════════════════════════════════════════
 
 class _SlidingWindowRateLimiter:
-    """Thread-safe sliding-window rate limiter.
+    """Thread-safe sliding-window rate limiter for a single API key.
 
-    Tracks timestamps of the last N successful slot acquisitions within a
-    rolling time window.  When the window is full, callers block until the
-    oldest slot expires.
-
-    The lock is released *before* sleeping so other threads can continue
-    checking the window state rather than queueing behind a held lock.
+    Tracks the timestamps of the last N call slots within a rolling window.
+    When the window is full, the caller blocks until the oldest slot expires.
+    The lock is released *before* sleeping so other threads aren't stalled.
     """
 
     def __init__(
@@ -56,58 +60,155 @@ class _SlidingWindowRateLimiter:
         self._lock = threading.Lock()
 
     def acquire(self) -> None:
-        """Block until a call slot is available, then claim it."""
+        """Block until a rate-limit slot is available, then claim it."""
         while True:
             with self._lock:
                 now = time.monotonic()
                 cutoff = now - self._window
-                # Drop calls that have scrolled outside the window.
                 self._call_times = [t for t in self._call_times if t > cutoff]
                 if len(self._call_times) < self._rate:
                     self._call_times.append(now)
                     return
-                # Calculate how long until the oldest call leaves the window.
                 sleep_for = (self._call_times[0] + self._window) - now + 0.05
-            # Release the lock before sleeping so other threads aren't stalled.
             time.sleep(max(0.0, sleep_for))
 
 
-# Module-level singleton — shared across every LlmService instance in this
-# process.  On Render free tier there is exactly one process, so this single
-# limiter correctly serialises all Gemini traffic to ≤15 RPM.
-_gemini_rate_limiter = _SlidingWindowRateLimiter()
+# ═══════════════════════════════════════════════════════════════════════════
+# Multi-key round-robin pool with per-key cooldown
+# ═══════════════════════════════════════════════════════════════════════════
 
+class GeminiAllKeysCoolingError(RuntimeError):
+    """Raised when every key in the pool is in 429 cooldown.
+
+    The caller (HybridReviewAnalyzer) catches this as a generic Exception
+    and falls back to rule-based analysis — no stack trace in prod logs.
+    The UI RateLimitBanner becomes visible only when this error propagates
+    to a TanStack Query, meaning the entire pool is truly exhausted.
+    """
+
+
+class _GeminiKeyPool:
+    """Round-robin pool of Gemini API keys with per-key 429 cooldown.
+
+    Each key has:
+      - A _SlidingWindowRateLimiter (≤15 RPM per key, per Gemini free tier).
+      - A cool_until timestamp (0.0 = available immediately).
+
+    acquire() selects the next available key in round-robin order, advancing
+    a cursor so load is spread evenly.  mark_cooldown() freezes a key for
+    _COOLDOWN_SECONDS after a 429.
+
+    Thread safety: all mutations are protected by a single lock.
+    """
+
+    def __init__(self, keys: list[str]) -> None:
+        self._keys = keys
+        self._cool_until: dict[str, float] = {k: 0.0 for k in keys}
+        self._limiters: dict[str, _SlidingWindowRateLimiter] = {
+            k: _SlidingWindowRateLimiter() for k in keys
+        }
+        self._cursor = 0
+        self._lock = threading.Lock()
+
+    # ── Public API ─────────────────────────────────────────────────────────
+
+    def acquire(self) -> tuple[str, _SlidingWindowRateLimiter]:
+        """Return the next (key, limiter) in round-robin order.
+
+        Skips keys whose cooldown has not expired.
+        Raises GeminiAllKeysCoolingError if every key is cooling.
+        """
+        with self._lock:
+            now = time.monotonic()
+            n = len(self._keys)
+            for offset in range(n):
+                idx = (self._cursor + offset) % n
+                key = self._keys[idx]
+                if now >= self._cool_until[key]:
+                    self._cursor = (idx + 1) % n
+                    return key, self._limiters[key]
+            soonest = min(self._cool_until[k] for k in self._keys)
+            raise GeminiAllKeysCoolingError(
+                f"All {n} Gemini key(s) cooling. "
+                f"Next available in {max(0.0, soonest - now):.0f}s."
+            )
+
+    def mark_cooldown(self, key: str, duration: float = _COOLDOWN_SECONDS) -> None:
+        """Mark a key as cooling for `duration` seconds after a 429."""
+        with self._lock:
+            self._cool_until[key] = time.monotonic() + duration
+
+    def soonest_available_at(self) -> float:
+        """Monotonic timestamp when the first key comes out of cooldown."""
+        with self._lock:
+            if not self._keys:
+                return time.monotonic()
+            return min(self._cool_until[k] for k in self._keys)
+
+    # ── Introspection (used by status()) ───────────────────────────────────
+
+    @property
+    def size(self) -> int:
+        return len(self._keys)
+
+    def available_count(self) -> int:
+        now = time.monotonic()
+        with self._lock:
+            return sum(1 for k in self._keys if now >= self._cool_until[k])
+
+    def cooling_count(self) -> int:
+        return self.size - self.available_count()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# LlmService
+# ═══════════════════════════════════════════════════════════════════════════
 
 class LlmService:
-    """Provider-agnostic LLM service.
+    """Provider-agnostic LLM service with multi-key round-robin failover.
 
-    MVP provider: Gemini 2.5 Flash via direct REST API.
-    Future providers can be plugged in without changing the route contract.
+    Key resolution (highest priority first)
+    ----------------------------------------
+    1. GEMINI_API_KEYS  — comma-separated list: "AIza...1,AIza...2,AIza...3"
+    2. GEMINI_API_KEY   — single key (backward-compatible)
 
-    Rate-limiting strategy
-    ----------------------
-    All Gemini calls go through _call_gemini(), which:
-      1. Acquires a slot from the sliding-window limiter (≤15 RPM).
-      2. Executes the HTTP request.
-      3. On a transient error (429 / 500 / 503), waits with full-jitter
-         exponential backoff and retries up to _MAX_RETRIES times.
+    Failover flow for _call_gemini()
+    ----------------------------------
+    Per attempt (max = pool.size × 3, min 6):
 
-    This means a batch import of 200 reviews will automatically pace itself
-    at ≤15 calls per minute and survive any transient Gemini hiccups without
-    losing data — the hybrid_analyzer.py rules-based fallback still fires if
-    all retries are exhausted.
+      Step 1 — pool.acquire()
+        → Returns the next available key in round-robin order.
+        → If all keys are cooling → sleep until the soonest recovers,
+          then continue (this counts as an attempt, not a retry).
+
+      Step 2 — per-key rate limiter (≤15 RPM)
+        → Blocks if this key has already fired 15 calls this minute.
+
+      Step 3 — HTTP POST to Gemini
+        Success  → return text.
+        429      → mark_cooldown(key); continue immediately (no sleep).
+        500/503  → exponential backoff + jitter; continue on any key.
+        Other    → raise immediately (non-retryable).
+
+    The RateLimitBanner in the UI only becomes visible when GeminiAllKeysCoolingError
+    propagates all the way to the TanStack Query layer — i.e. the pool is
+    truly exhausted.  For a single-key deployment the banner appears whenever
+    that key is cooling.
     """
 
     def __init__(self) -> None:
         load_dotenv()
         self.provider = os.getenv("IRIP_LLM_PROVIDER", "gemini").strip().lower()
-        self.gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
         self.gemini_model = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip()
+        self._key_pool = self._build_key_pool()
+
+    # ── Public API ─────────────────────────────────────────────────────────
 
     def status(self) -> LlmProviderStatus:
+        # Re-read mode/provider/model for hot-reload; do NOT rebuild the pool
+        # (rebuilding would destroy live cooldown state).
         load_dotenv(override=False)
         self.provider = os.getenv("IRIP_LLM_PROVIDER", "gemini").strip().lower()
-        self.gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
         self.gemini_model = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip()
         mode = os.getenv("IRIP_LLM_MODE", "selective").strip().lower()
 
@@ -120,13 +221,36 @@ class LlmService:
                 reason="Only gemini provider is implemented in this MVP slice.",
             )
 
-        if not self.gemini_api_key:
+        pool = self._key_pool
+        if pool.size == 0:
             return LlmProviderStatus(
                 provider="gemini",
                 enabled=False,
                 model=self.gemini_model,
                 mode=mode,
-                reason="GEMINI_API_KEY is not set in backend environment.",
+                reason=(
+                    "No Gemini API keys configured. "
+                    "Set GEMINI_API_KEYS (comma-separated) or GEMINI_API_KEY."
+                ),
+            )
+
+        available = pool.available_count()
+        cooling = pool.cooling_count()
+
+        if available == 0:
+            return LlmProviderStatus(
+                provider="gemini",
+                enabled=False,
+                model=self.gemini_model,
+                mode=mode,
+                reason=f"All {pool.size} key(s) are in 429 cooldown.",
+            )
+
+        reason: str | None = None
+        if cooling > 0:
+            reason = (
+                f"{available}/{pool.size} key(s) available "
+                f"({cooling} cooling after 429)."
             )
 
         return LlmProviderStatus(
@@ -134,21 +258,23 @@ class LlmService:
             enabled=True,
             model=self.gemini_model,
             mode=mode,
-            reason=None,
+            reason=reason,
         )
 
     def set_mode(self, mode: str) -> str:
         normalized = mode.strip().lower()
-        allowed = {"off", "selective", "always"}
-        if normalized not in allowed:
+        if normalized not in {"off", "selective", "always"}:
             raise ValueError("Invalid LLM mode. Allowed values: off, selective, always.")
         os.environ["IRIP_LLM_MODE"] = normalized
         return normalized
 
     def generate_narrative(self, prompt: str) -> str:
-        """Call Gemini for free-text prose output."""
-        if not self.gemini_api_key:
-            raise RuntimeError("GEMINI_API_KEY is not configured.")
+        """Call Gemini for free-text prose output (narratives, summaries)."""
+        if self._key_pool.size == 0:
+            raise RuntimeError(
+                "No Gemini API keys configured. "
+                "Set GEMINI_API_KEYS or GEMINI_API_KEY."
+            )
         return self._call_gemini(
             prompt=prompt,
             generation_config={"temperature": 0.4, "maxOutputTokens": 1024},
@@ -158,9 +284,9 @@ class LlmService:
         self,
         request: LlmReviewExtractionRequest,
     ) -> LlmReviewExtractionResponse:
-        status = self.status()
-        if not status.enabled:
-            raise RuntimeError(status.reason or "LLM provider is not enabled.")
+        s = self.status()
+        if not s.enabled:
+            raise RuntimeError(s.reason or "LLM provider is not enabled.")
 
         prompt = _build_review_extraction_prompt(request)
         raw_text = self._call_gemini(
@@ -201,30 +327,41 @@ class LlmService:
             raw_model_text=raw_text,
         )
 
-    # ------------------------------------------------------------------ #
-    #  Internal — rate-limited, retry-backed Gemini HTTP call             #
-    # ------------------------------------------------------------------ #
+    # ── Internal ───────────────────────────────────────────────────────────
+
+    def _build_key_pool(self) -> _GeminiKeyPool:
+        """Parse GEMINI_API_KEYS (plural CSV) then fall back to GEMINI_API_KEY."""
+        plural_raw = os.getenv("GEMINI_API_KEYS", "").strip()
+        if plural_raw:
+            candidates = [k.strip() for k in plural_raw.split(",") if k.strip()]
+        else:
+            single = os.getenv("GEMINI_API_KEY", "").strip()
+            candidates = [single] if single else []
+
+        # Deduplicate while preserving insertion order.
+        seen: set[str] = set()
+        unique: list[str] = []
+        for k in candidates:
+            if k not in seen:
+                seen.add(k)
+                unique.append(k)
+
+        return _GeminiKeyPool(unique)
 
     def _call_gemini(
         self,
         prompt: str,
         generation_config: dict[str, Any] | None = None,
     ) -> str:
-        """Execute a Gemini generateContent call with rate limiting and backoff.
+        """Rate-limited, multi-key Gemini call with rotation and backoff.
 
-        Algorithm
-        ---------
-        For each attempt (up to _MAX_RETRIES + 1 total):
-          1. Block in _SlidingWindowRateLimiter.acquire() until a slot is free.
-          2. Fire the HTTP request.
-          3. On success, return the text immediately.
-          4. On a retryable status (429 / 500 / 503), wait with full-jitter
-             exponential backoff:  delay = min(base * 2^attempt + U(0, base), max)
-          5. On any other error, raise immediately (no retry).
+        429  → mark_cooldown(key), rotate immediately.
+        500/503 → exponential backoff + jitter, retry on any available key.
+        All cooling → sleep until soonest recovery, then retry.
         """
-        endpoint = (
+        endpoint_tpl = (
             "https://generativelanguage.googleapis.com/v1beta/"
-            f"models/{self.gemini_model}:generateContent?key={self.gemini_api_key}"
+            "models/{model}:generateContent?key={key}"
         )
         payload: dict[str, Any] = {
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
@@ -235,11 +372,28 @@ class LlmService:
         request_data = json.dumps(payload).encode("utf-8")
         timeout = int(os.getenv("GEMINI_TIMEOUT_SECONDS", "120"))
 
-        for attempt in range(_MAX_RETRIES + 1):
-            _gemini_rate_limiter.acquire()
+        # Scale max attempts with pool size so every key gets ≥3 chances.
+        max_attempts = max(self._key_pool.size * 3, 6)
 
+        for attempt in range(max_attempts):
+
+            # ── 1. Pick the next available key ──────────────────────────
+            try:
+                key, limiter = self._key_pool.acquire()
+            except GeminiAllKeysCoolingError:
+                # All keys are cooling — wait for the first one to recover,
+                # then loop back and try acquire() again.
+                wait = max(0.1, self._key_pool.soonest_available_at() - time.monotonic())
+                time.sleep(min(wait, _BACKOFF_MAX))
+                continue
+
+            # ── 2. Respect per-key rate limit (≤15 RPM) ─────────────────
+            limiter.acquire()
+
+            # ── 3. HTTP call ─────────────────────────────────────────────
+            url = endpoint_tpl.format(model=self.gemini_model, key=key)
             req = urllib.request.Request(
-                endpoint,
+                url,
                 data=request_data,
                 headers={"Content-Type": "application/json"},
                 method="POST",
@@ -250,16 +404,22 @@ class LlmService:
                 try:
                     return data["candidates"][0]["content"]["parts"][0]["text"]
                 except (KeyError, IndexError, TypeError) as exc:
-                    raise RuntimeError(f"Unexpected Gemini response shape: {data}") from exc
+                    raise RuntimeError(
+                        f"Unexpected Gemini response shape: {data}"
+                    ) from exc
 
             except urllib.error.HTTPError as exc:
                 status_code = exc.code
-                # Read the body now — the HTTPError object is not re-readable.
+                # Read body before any sleep — HTTPError is not re-readable.
                 error_body = exc.read().decode("utf-8", errors="replace")
 
-                if status_code in _RETRYABLE_CODES and attempt < _MAX_RETRIES:
-                    # Full-jitter exponential backoff:
-                    #   base * 2^0 + jitter → base * 2^1 + jitter → …
+                if status_code == 429:
+                    # ── 4. Cool this key; next iteration picks a fresh one ─
+                    self._key_pool.mark_cooldown(key)
+                    continue
+
+                if status_code in _RETRYABLE_SERVER_CODES:
+                    # ── 5. Server hiccup — back off, then retry any key ───
                     jitter = random.uniform(0.0, _BACKOFF_BASE)
                     delay = min(_BACKOFF_BASE * (2 ** attempt) + jitter, _BACKOFF_MAX)
                     time.sleep(delay)
@@ -273,13 +433,14 @@ class LlmService:
                 raise RuntimeError(f"Gemini API request failed: {exc}") from exc
 
         raise RuntimeError(
-            f"Gemini API: exhausted {_MAX_RETRIES} retries on transient errors."
+            f"Gemini API: exhausted {max_attempts} attempts across "
+            f"{self._key_pool.size} key(s). All keys may be rate-limited."
         )
 
 
-# ------------------------------------------------------------------ #
-#  Prompt builder                                                      #
-# ------------------------------------------------------------------ #
+# ═══════════════════════════════════════════════════════════════════════════
+# Prompt builder
+# ═══════════════════════════════════════════════════════════════════════════
 
 def _build_review_extraction_prompt(request: LlmReviewExtractionRequest) -> str:
     return f"""
@@ -343,17 +504,15 @@ Important interpretation rules:
 """.strip()
 
 
-# ------------------------------------------------------------------ #
-#  Parsing helpers                                                     #
-# ------------------------------------------------------------------ #
+# ═══════════════════════════════════════════════════════════════════════════
+# Parsing helpers
+# ═══════════════════════════════════════════════════════════════════════════
 
 def _extract_json_object(text: str) -> dict[str, Any]:
     cleaned = text.strip()
-
     if cleaned.startswith("```"):
         cleaned = re.sub(r"^```(?:json)?", "", cleaned).strip()
         cleaned = re.sub(r"```$", "", cleaned).strip()
-
     try:
         parsed = json.loads(cleaned)
     except json.JSONDecodeError:
@@ -361,10 +520,8 @@ def _extract_json_object(text: str) -> dict[str, Any]:
         if not match:
             raise RuntimeError(f"LLM did not return JSON: {text}")
         parsed = json.loads(match.group(0))
-
     if not isinstance(parsed, dict):
         raise RuntimeError(f"LLM JSON root must be an object: {parsed}")
-
     return parsed
 
 
