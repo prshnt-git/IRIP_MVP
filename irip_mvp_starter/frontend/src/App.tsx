@@ -33,8 +33,6 @@ import {
   type AspectReasonCard,
   type BenchmarkSummary,
   type BenchmarkSpecTable,
-  type SignalChip,
-  type ChartDatum,
   type ImportPreviewResponse,
   fetchProducts,
   fetchVisualDashboard,
@@ -44,6 +42,7 @@ import {
 import "./App.css";
 import ReportView from "./components/ReportView";
 import SentimentView from "./components/SentimentView";
+import MarketTab from "./components/MarketTab";
 
 // ============================================================
 // Zustand store — shared selection state
@@ -1018,7 +1017,7 @@ function MainVisualTile({
           onOpenEvidence={onOpenEvidence}
         />
       ) : activeView === "news" ? (
-        <NewsView dashboard={dashboard} />
+        <MarketTab />
       ) : activeView === "quality" ? (
         <QualityView dashboard={dashboard} report={report} />
       ) : (
@@ -1159,43 +1158,6 @@ function SummaryView({
       </div>
     </div>
   );
-}
-
-function findKpiCard(cards: KpiCard[], id: string) {
-  return cards.find((card) => card.id === id);
-}
-
-function cleanShortSentimentLine(value: string) {
-  return value
-    .replace("signal(s)", "signals")
-    .replace(" are currently balanced.", "")
-    .replace(
-      "Small sample. Treat aspect sentiment as early signal.",
-      "Small sample. Read carefully."
-    )
-    .trim();
-}
-
-function volumePercent(value: number | string, rows: ChartDatum[]) {
-  const max = Math.max(...rows.map((item) => Number(item.value || 0)), 1);
-  return Math.max(8, Math.round((Number(value || 0) / max) * 100));
-}
-
-function sentimentCleanTone(label: string) {
-  const value = label.toLowerCase();
-  if (value.includes("positive")) return "positive";
-  if (value.includes("negative")) return "negative";
-  if (value.includes("mixed") || value.includes("polarized")) return "mixed";
-  return "neutral";
-}
-
-function cleanReactionLabel(label: string) {
-  const value = label.toLowerCase();
-  if (value.includes("positive")) return "Positive";
-  if (value.includes("negative")) return "Negative";
-  if (value.includes("mixed") || value.includes("polarized")) return "Mixed";
-  if (value.includes("neutral")) return "Neutral";
-  return labelize(label);
 }
 
 function CompetitorView({
@@ -1408,22 +1370,6 @@ function cleanBenchmarkSummaryText(value: string) {
     .replace(" ,", ",")
     .replace(" .", ".")
     .trim();
-}
-
-function NewsView({ dashboard }: { dashboard: VisualDashboard }) {
-  return (
-    <div className="news-view">
-      <div className="news-chart-zone">
-        <EChartCard chart={dashboard.news_signal_chart} variant="bar" />
-        <EChartCard
-          chart={dashboard.source_tier_chart}
-          variant="donut"
-          compact
-        />
-      </div>
-      <SignalChipGroup chips={dashboard.news_signal_chips} />
-    </div>
-  );
 }
 
 function QualityView({
@@ -1937,29 +1883,6 @@ function buildGapOption(chart: CompetitorGapChart) {
       },
     ],
   };
-}
-
-function SignalChipGroup({ chips }: { chips: SignalChip[] }) {
-  return (
-    <div className="signal-chip-zone">
-      <div className="tile-section-header slim">
-        <div>
-          <p className="irip-eyebrow">Signals</p>
-          <h3>Detected intelligence tags</h3>
-        </div>
-      </div>
-      <div className="signal-chip-grid">
-        {chips.map((chip) => (
-          <span
-            className={`signal-chip ${chip.signal_type}`}
-            key={`${chip.signal_type}-${chip.label}`}
-          >
-            {labelize(chip.label)}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
 }
 
 function RightControlPanel({

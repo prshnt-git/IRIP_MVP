@@ -375,6 +375,44 @@ export type VisualDashboard = {
 };
 
 // ============================================================
+// Types — market intelligence
+// ============================================================
+
+export type MarketPulseItem = {
+  headline: string;
+  summary: string;
+  relevance: "high" | "medium";
+  category: "launch" | "trend" | "competitor" | "consumer";
+};
+
+export type UpcomingLaunchItem = {
+  brand: string;
+  model: string;
+  estimated_date: string;
+  expected_price_inr: string;
+  key_feature: string;
+};
+
+export type CompetitorWatchItem = {
+  brand: string;
+  recent_move: string;
+  threat_level: "high" | "medium" | "low";
+  our_response: string;
+};
+
+export type MarketIntelligence = {
+  market_pulse: MarketPulseItem[];
+  upcoming_launches: UpcomingLaunchItem[];
+  competitor_watch: CompetitorWatchItem[];
+  segment_trend: string;
+  consumer_shift: string;
+  cached_at: string;
+  cache_expires_at: string;
+  error: boolean;
+  error_message: string | null;
+};
+
+// ============================================================
 // Types — executive report
 // ============================================================
 
@@ -640,6 +678,10 @@ export async function fetchProductAspects(
   return getJson<AspectSummaryItem[]>(
     `/products/${encodeURIComponent(productId)}/aspects${query}`
   );
+}
+
+export async function fetchMarketIntelligence(): Promise<MarketIntelligence> {
+  return getJson<MarketIntelligence>("/market/intelligence");
 }
 
 // ============================================================

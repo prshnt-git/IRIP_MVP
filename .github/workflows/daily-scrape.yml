@@ -1,0 +1,102 @@
+name: Daily Review Scrape
+
+# Runs at 2:30 AM UTC = 8:00 AM IST every day.
+# Can also be triggered manually from the GitHub Actions UI.
+on:
+  schedule:
+    - cron: '30 2 * * *'
+  workflow_dispatch:
+    inputs:
+      days_back:
+        description: 'How many days of reviews to scrape (default 7)'
+        required: false
+        default: '7'
+
+jobs:
+  scrape-and-import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      # ── 2. Python ────────────────────────────────────────────────────────────
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      # ── 3. Dependencies (only what the scrapers need) ─────────────────────────
+      - name: Install scraper dependencies
+        run: pip install requests beautifulsoup4 lxml
+
+      # ── 4. Wake Render (free tier spins down after 15 min idle) ──────────────
+      # Send health check first so the pod is warm before we POST the CSV.
+      # The || true prevents this step from failing if Render is temporarily down.
+      - name: Wake Render backend
+        run: |
+          echo "Pinging Render health endpoint..."
+          curl -sf --retry 3 --retry-delay 10 \
+               https://irip-api.onrender.com/health \
+               || echo "Health check did not return 200 — continuing anyway"
+          echo "Waiting 15 s for Render to finish waking..."
+          sleep 15
+
+      # ── 5. Run scraper ────────────────────────────────────────────────────────
+      - name: Run daily scrape
+        env:
+          DAYS_BACK: ${{ github.event.inputs.days_back || '7' }}
+        run: |
+          python scripts/run_daily_scrape.py --days-back "$DAYS_BACK"
+
+      # ── 6. Upload CSV artifact (always — useful for debugging failures) ───────
+      - name: Upload scraped CSV artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scraped-reviews-${{ github.run_id }}
+          path: scraped_reviews.csv
+          retention-days: 7
+          if-no-files-found: ignore
+
+      # ── 7. POST CSV to Render /reviews/import-csv ─────────────────────────────
+      - name: Import reviews to Render backend
+        env:
+          PIPELINE_SECRET_KEY: ${{ secrets.PIPELINE_SECRET_KEY }}
+        run: |
+          # Guard: if no CSV was produced (0 new reviews today), skip import
+          if [ ! -f scraped_reviews.csv ]; then
+            echo "scraped_reviews.csv not found — nothing scraped. Skipping import."
+            exit 0
+          fi
+
+          # Count data rows (header + N rows; if only header, skip)
+          DATA_ROWS=$(( $(wc -l < scraped_reviews.csv) - 1 ))
+          if [ "$DATA_ROWS" -le 0 ]; then
+            echo "No new reviews found today. Skipping import."
+            exit 0
+          fi
+
+          echo "Importing $DATA_ROWS review(s) to Render..."
+
+          # Capture response body and HTTP status separately
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -X POST "https://irip-api.onrender.com/reviews/import-csv" \
+            -H "X-Pipeline-Key: ${PIPELINE_SECRET_KEY}" \
+            -F "file=@scraped_reviews.csv")
+
+          HTTP_STATUS=$(printf '%s' "$RESPONSE" | tail -1)
+          BODY=$(printf '%s' "$RESPONSE" | head -n -1)
+
+          echo "HTTP Status : $HTTP_STATUS"
+          echo "Response    : $BODY"
+
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "ERROR: Import returned HTTP $HTTP_STATUS. Failing job."
+            exit 1
+          fi
+
+          echo "Import completed successfully."

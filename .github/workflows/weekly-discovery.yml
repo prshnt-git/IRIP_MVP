@@ -1,0 +1,83 @@
+name: Weekly Product Discovery
+
+# Runs at 3:00 AM UTC Monday = 8:30 AM IST Monday.
+# Discovers newly launched India smartphones (₹10k–₹35k) and adds them to the catalog.
+# Can also be triggered manually with a custom months_back value.
+on:
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+    inputs:
+      months_back:
+        description: 'How many months back to search for new launches (1–12)'
+        required: false
+        default: '4'
+
+jobs:
+  discover-products:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      # ── 2. Wake Render (free tier spins down after 15 min idle) ──────────────
+      # Discovery is a slow call (~30–60 s) — wake the pod first.
+      - name: Wake Render backend
+        run: |
+          echo "Pinging Render health endpoint..."
+          curl -sf --retry 3 --retry-delay 10 \
+               https://irip-api.onrender.com/health \
+               || echo "Health check did not return 200 — continuing anyway"
+          echo "Waiting 20 s for Render to finish waking..."
+          sleep 20
+
+      # ── 3. Call product discovery endpoint ───────────────────────────────────
+      - name: Run product discovery
+        env:
+          PIPELINE_SECRET_KEY: ${{ secrets.PIPELINE_SECRET_KEY }}
+          MONTHS_BACK: ${{ github.event.inputs.months_back || '4' }}
+        run: |
+          echo "Calling /products/discover (months_back=${MONTHS_BACK})..."
+
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            --max-time 90 \
+            -X POST "https://irip-api.onrender.com/products/discover?months_back=${MONTHS_BACK}" \
+            -H "X-Pipeline-Key: ${PIPELINE_SECRET_KEY}" \
+            -H "Accept: application/json")
+
+          HTTP_STATUS=$(printf '%s' "$RESPONSE" | tail -1)
+          BODY=$(printf '%s' "$RESPONSE" | head -n -1)
+
+          echo "HTTP Status : $HTTP_STATUS"
+          echo "Response    : $BODY"
+
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "ERROR: Discovery returned HTTP $HTTP_STATUS. Failing job."
+            exit 1
+          fi
+
+          # Parse and print a human-readable summary
+          DISCOVERED=$(printf '%s' "$BODY" | python3 -c \
+            "import sys,json; d=json.load(sys.stdin); print(d.get('discovered', 0))")
+          NEW=$(printf '%s' "$BODY" | python3 -c \
+            "import sys,json; d=json.load(sys.stdin); print(d.get('new_products_count', 0))")
+          SKIPPED=$(printf '%s' "$BODY" | python3 -c \
+            "import sys,json; d=json.load(sys.stdin); print(d.get('existing_skipped', 0))")
+
+          echo ""
+          echo "────────────────────────────────────"
+          echo "  Discovery summary"
+          echo "────────────────────────────────────"
+          echo "  Products found     : $DISCOVERED"
+          echo "  New → added        : $NEW"
+          echo "  Already known      : $SKIPPED"
+          echo "────────────────────────────────────"
+
+          if [ "$NEW" -gt 0 ]; then
+            echo "New products were added to the catalog. Check irip-api.onrender.com/products/catalog to review them."
+          else
+            echo "No new products discovered this week."
+          fi

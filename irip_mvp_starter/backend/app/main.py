@@ -140,6 +140,10 @@ visualization_service = VisualizationService(
     system_readiness_service=system_readiness_service,
 )
 
+# Simple in-memory cache for /market/intelligence (survives only within one Render pod lifetime)
+_market_cache: dict[str, object] = {}
+_MARKET_CACHE_TTL_HOURS = 24
+
 # --- IRIP Catalog Benchmark Monkey Patch START ---
 # Catalog specs should win over Gemini/rules when both selected and competitor products exist in catalog.
 try:
@@ -1044,6 +1048,114 @@ def get_news_brief(
         limit=limit,
     )
     return NewsBriefResponse(**result)
+
+
+def _parse_market_json(raw: str) -> dict:
+    """Strip optional markdown fences from a Gemini response then parse JSON."""
+    cleaned = raw.strip()
+    if "```" in cleaned:
+        lines = [ln for ln in cleaned.splitlines() if not ln.strip().startswith("```")]
+        cleaned = "\n".join(lines).strip()
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        start = cleaned.find("{")
+        end = cleaned.rfind("}") + 1
+        if start < 0 or end <= 0:
+            raise RuntimeError(f"Gemini did not return JSON. Preview: {cleaned[:200]}")
+        return json.loads(cleaned[start:end])
+
+
+def _market_fallback(error_msg: str) -> dict:
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    return {
+        "market_pulse": [
+            {
+                "headline": "Market intelligence temporarily unavailable",
+                "summary": (
+                    "The AI service could not be reached. "
+                    "Please refresh to try again."
+                ),
+                "relevance": "medium",
+                "category": "trend",
+            }
+        ],
+        "upcoming_launches": [],
+        "competitor_watch": [],
+        "segment_trend": "Market data is temporarily unavailable. Refresh to retry.",
+        "consumer_shift": "Consumer shift data unavailable at this time.",
+        "cached_at": now,
+        "cache_expires_at": now,
+        "error": True,
+        "error_message": error_msg,
+    }
+
+
+@app.get("/market/intelligence")
+def get_market_intelligence() -> dict:
+    """AI-generated India smartphone market brief, cached for 24 hours in-memory."""
+    from datetime import datetime, timedelta, timezone
+
+    # Serve from cache when still fresh
+    cached = _market_cache.get("data")
+    if cached and isinstance(cached, dict):
+        try:
+            cached_at = datetime.fromisoformat(str(cached["cached_at"]))
+            if not cached_at.tzinfo:
+                cached_at = cached_at.replace(tzinfo=timezone.utc)
+            age_hours = (datetime.now(timezone.utc) - cached_at).total_seconds() / 3600
+            if age_hours < _MARKET_CACHE_TTL_HOURS:
+                return cached
+        except (KeyError, ValueError):
+            pass
+
+    current_date = datetime.now().strftime("%B %d, %Y")
+    prompt = (
+        "You are a market analyst tracking the Indian smartphone market for Transsion "
+        f"(brands: itel, Infinix, Tecno). Today is {current_date}.\n"
+        "Provide a structured market intelligence brief. Return ONLY valid JSON "
+        "(no markdown, no commentary):\n"
+        '{\n'
+        '  "market_pulse": [\n'
+        '    {"headline": "...", "summary": "2 concise sentences.", '
+        '"relevance": "high"|"medium", '
+        '"category": "launch"|"trend"|"competitor"|"consumer"}\n'
+        '  ],\n'
+        '  "upcoming_launches": [\n'
+        '    {"brand": "...", "model": "...", "estimated_date": "...", '
+        '"expected_price_inr": "₹XX,000", "key_feature": "..."}\n'
+        '  ],\n'
+        '  "competitor_watch": [\n'
+        '    {"brand": "...", "recent_move": "...", '
+        '"threat_level": "high"|"medium"|"low", "our_response": "..."}\n'
+        '  ],\n'
+        '  "segment_trend": "2-sentence overview of ₹10K-₹35K India segment.",\n'
+        '  "consumer_shift": "What Indian buyers in this segment want most right now."\n'
+        '}\n'
+        "Rules: market_pulse = exactly 4 items. upcoming_launches = 5-6 items in "
+        "₹10K-₹35K. competitor_watch = top 4. "
+        "Focus on: Samsung Galaxy A/M, Realme, POCO, Redmi Note, iQOO Z, Motorola G."
+    )
+
+    try:
+        raw = llm_service.generate_narrative(prompt)
+        data = _parse_market_json(raw)
+
+        now = datetime.now(timezone.utc)
+        result: dict[str, object] = {
+            **data,
+            "cached_at": now.isoformat(),
+            "cache_expires_at": (
+                now + timedelta(hours=_MARKET_CACHE_TTL_HOURS)
+            ).isoformat(),
+            "error": False,
+            "error_message": None,
+        }
+        _market_cache["data"] = result
+        return result
+    except Exception as exc:
+        return _market_fallback(str(exc))
 
 
 @app.get("/reports/executive", response_model=ExecutiveReportResponse)

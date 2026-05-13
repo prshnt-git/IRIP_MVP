@@ -1,0 +1,67 @@
+[
+  {
+    "_comment": "OWN BRAND — Infinix Note 60 Pro. Add real Amazon ASIN when available.",
+    "product_id": "infinix_note_60_pro",
+    "product_name": "Infinix Note 60 Pro",
+    "brand": "Infinix",
+    "price_band": "15000-20000",
+    "is_own_brand": true,
+    "amazon_asin": "TODO",
+    "amazon_url": "TODO",
+    "flipkart_url": "https://www.flipkart.com/infinix-note-60-pro/p/itm7681d00923b3c",
+    "scrape_amazon": false,
+    "scrape_flipkart": true
+  },
+  {
+    "_comment": "OWN BRAND — itel Zeno 200. Both ASINs pending — add when product goes live on Amazon/Flipkart.",
+    "product_id": "itel_zeno_200",
+    "product_name": "itel Zeno 200",
+    "brand": "itel",
+    "price_band": "10000-15000",
+    "is_own_brand": true,
+    "amazon_asin": "TODO",
+    "amazon_url": "TODO",
+    "flipkart_url": "TODO",
+    "scrape_amazon": false,
+    "scrape_flipkart": false
+  },
+  {
+    "_comment": "OWN BRAND — TECNO POVA Curve 2 5G. Add URLs when product is listed.",
+    "product_id": "tecno_pova_curve_2_5g",
+    "product_name": "TECNO POVA Curve 2 5G",
+    "brand": "TECNO",
+    "price_band": "15000-20000",
+    "is_own_brand": true,
+    "amazon_asin": "TODO",
+    "amazon_url": "TODO",
+    "flipkart_url": "TODO",
+    "scrape_amazon": false,
+    "scrape_flipkart": false
+  },
+  {
+    "_comment": "COMPETITOR — iQOO Z11x 5G. Real Flipkart URL confirmed. Amazon ASIN TODO.",
+    "product_id": "iqoo_z_11x_5g",
+    "product_name": "iQOO Z11x 5G",
+    "brand": "iQOO",
+    "price_band": "15000-20000",
+    "is_own_brand": false,
+    "amazon_asin": "TODO",
+    "amazon_url": "TODO",
+    "flipkart_url": "https://www.flipkart.com/iqoo-z11x-5g-titan-black-128-gb/p/itm8278ba39f21e3",
+    "scrape_amazon": false,
+    "scrape_flipkart": true
+  },
+  {
+    "_comment": "COMPETITOR — Realme Narzo 90x 5G. Real Flipkart URL confirmed. Amazon ASIN TODO.",
+    "product_id": "realme_narzo_90x_5g",
+    "product_name": "Realme Narzo 90x 5G",
+    "brand": "Realme",
+    "price_band": "15000-20000",
+    "is_own_brand": false,
+    "amazon_asin": "TODO",
+    "amazon_url": "TODO",
+    "flipkart_url": "https://www.flipkart.com/realme-narzo-90x-5g-flash-blue-128-gb/p/itma63c5c5ce781a",
+    "scrape_amazon": false,
+    "scrape_flipkart": true
+  }
+]
