@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { RefreshCw, AlertTriangle, Clock } from "lucide-react";
 import type {
@@ -317,6 +317,7 @@ export default function MarketTab() {
     staleTime: 24 * 60 * 60 * 1000,
     refetchOnWindowFocus: false,
     retry: 1,
+    placeholderData: keepPreviousData,
   });
 
   const pulse = data?.market_pulse ?? [];

@@ -12,6 +12,23 @@ export function setAuthToken(token: string | null): void {
 }
 
 // ============================================================
+// ApiError — typed error carrying HTTP status for smart retry logic
+// ============================================================
+
+export class ApiError extends Error {
+  readonly status: number;
+  /** True when the server returned 429 Too Many Requests (Gemini rate limit). */
+  readonly isRateLimit: boolean;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.isRateLimit = status === 429;
+  }
+}
+
+// ============================================================
 // Types — shared primitives
 // ============================================================
 
@@ -549,7 +566,8 @@ async function getJson<T>(path: string): Promise<T> {
     headers: buildHeaders(),
   });
   if (!response.ok) {
-    throw new Error(await extractErrorMessage(response));
+    const message = await extractErrorMessage(response);
+    throw new ApiError(message, response.status);
   }
   return response.json() as Promise<T>;
 }
@@ -561,7 +579,8 @@ async function postJson<T>(path: string, payload: unknown): Promise<T> {
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
-    throw new Error(await extractErrorMessage(response));
+    const message = await extractErrorMessage(response);
+    throw new ApiError(message, response.status);
   }
   return response.json() as Promise<T>;
 }

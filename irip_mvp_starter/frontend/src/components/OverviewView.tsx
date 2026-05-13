@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { motion } from "framer-motion";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { AlertTriangle, ChevronRight, Sparkles } from "lucide-react";
 import type { VisualDashboard, ExecutiveReport, KpiCard } from "../api";
 import { fetchCompetitorBenchmark, fetchIntelligenceBrief } from "../api";
@@ -188,6 +188,7 @@ function AiBriefCard({
     staleTime: 10 * 60 * 1000,
     retry: 1,
     enabled: Boolean(productId),
+    placeholderData: keepPreviousData,
   });
 
   const briefText = brief?.executive_summary ? firstTwoSentences(brief.executive_summary) : null;
@@ -283,6 +284,7 @@ export default function OverviewView({
       }),
     enabled: Boolean(productId && competitorId),
     staleTime: 5 * 60 * 1000,
+    placeholderData: keepPreviousData,
   });
 
   const showFairness =

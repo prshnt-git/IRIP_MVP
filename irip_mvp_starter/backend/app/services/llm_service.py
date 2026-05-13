@@ -1,8 +1,11 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import os
+import random
 import re
+import threading
+import time
 import urllib.error
 import urllib.request
 from typing import Any
@@ -18,12 +21,81 @@ from app.schemas.llm import (
 
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 
+# Gemini free-tier hard limit: 15 requests per 60-second rolling window.
+_GEMINI_RPM_LIMIT = 15
+_GEMINI_WINDOW_SECONDS = 60.0
+
+# Which HTTP status codes are transient and worth retrying.
+_RETRYABLE_CODES: frozenset[int] = frozenset({429, 500, 503})
+
+# Retry / backoff constants.
+_MAX_RETRIES = 3
+_BACKOFF_BASE = 2.0   # seconds — doubles on each attempt
+_BACKOFF_MAX = 60.0   # hard ceiling
+
+
+class _SlidingWindowRateLimiter:
+    """Thread-safe sliding-window rate limiter.
+
+    Tracks timestamps of the last N successful slot acquisitions within a
+    rolling time window.  When the window is full, callers block until the
+    oldest slot expires.
+
+    The lock is released *before* sleeping so other threads can continue
+    checking the window state rather than queueing behind a held lock.
+    """
+
+    def __init__(
+        self,
+        rate: int = _GEMINI_RPM_LIMIT,
+        window: float = _GEMINI_WINDOW_SECONDS,
+    ) -> None:
+        self._rate = rate
+        self._window = window
+        self._call_times: list[float] = []
+        self._lock = threading.Lock()
+
+    def acquire(self) -> None:
+        """Block until a call slot is available, then claim it."""
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                cutoff = now - self._window
+                # Drop calls that have scrolled outside the window.
+                self._call_times = [t for t in self._call_times if t > cutoff]
+                if len(self._call_times) < self._rate:
+                    self._call_times.append(now)
+                    return
+                # Calculate how long until the oldest call leaves the window.
+                sleep_for = (self._call_times[0] + self._window) - now + 0.05
+            # Release the lock before sleeping so other threads aren't stalled.
+            time.sleep(max(0.0, sleep_for))
+
+
+# Module-level singleton — shared across every LlmService instance in this
+# process.  On Render free tier there is exactly one process, so this single
+# limiter correctly serialises all Gemini traffic to ≤15 RPM.
+_gemini_rate_limiter = _SlidingWindowRateLimiter()
+
 
 class LlmService:
     """Provider-agnostic LLM service.
 
-    MVP provider: Gemini via REST API.
-    Future providers can be added without changing the API route contract.
+    MVP provider: Gemini 2.5 Flash via direct REST API.
+    Future providers can be plugged in without changing the route contract.
+
+    Rate-limiting strategy
+    ----------------------
+    All Gemini calls go through _call_gemini(), which:
+      1. Acquires a slot from the sliding-window limiter (≤15 RPM).
+      2. Executes the HTTP request.
+      3. On a transient error (429 / 500 / 503), waits with full-jitter
+         exponential backoff and retries up to _MAX_RETRIES times.
+
+    This means a batch import of 200 reviews will automatically pace itself
+    at ≤15 calls per minute and survive any transient Gemini hiccups without
+    losing data — the hybrid_analyzer.py rules-based fallback still fires if
+    all retries are exhausted.
     """
 
     def __init__(self) -> None:
@@ -68,54 +140,19 @@ class LlmService:
     def set_mode(self, mode: str) -> str:
         normalized = mode.strip().lower()
         allowed = {"off", "selective", "always"}
-
         if normalized not in allowed:
             raise ValueError("Invalid LLM mode. Allowed values: off, selective, always.")
-
         os.environ["IRIP_LLM_MODE"] = normalized
         return normalized
 
     def generate_narrative(self, prompt: str) -> str:
-        """Call Gemini for prose output (plain text, not JSON-constrained)."""
+        """Call Gemini for free-text prose output."""
         if not self.gemini_api_key:
             raise RuntimeError("GEMINI_API_KEY is not configured.")
-
-        endpoint = (
-            "https://generativelanguage.googleapis.com/v1beta/"
-            f"models/{self.gemini_model}:generateContent?key={self.gemini_api_key}"
+        return self._call_gemini(
+            prompt=prompt,
+            generation_config={"temperature": 0.4, "maxOutputTokens": 1024},
         )
-
-        payload = {
-            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "temperature": 0.4,
-                "maxOutputTokens": 1024,
-            },
-        }
-
-        request = urllib.request.Request(
-            endpoint,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-
-        try:
-            with urllib.request.urlopen(
-                request,
-                timeout=int(os.getenv("GEMINI_TIMEOUT_SECONDS", "120")),
-            ) as response:
-                data = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            error_body = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"Gemini API HTTP {exc.code}: {error_body}") from exc
-        except Exception as exc:
-            raise RuntimeError(f"Gemini API request failed: {exc}") from exc
-
-        try:
-            return data["candidates"][0]["content"]["parts"][0]["text"]
-        except (KeyError, IndexError, TypeError) as exc:
-            raise RuntimeError(f"Unexpected Gemini response shape: {data}") from exc
 
     def extract_review_intelligence(
         self,
@@ -126,7 +163,10 @@ class LlmService:
             raise RuntimeError(status.reason or "LLM provider is not enabled.")
 
         prompt = _build_review_extraction_prompt(request)
-        raw_text = self._call_gemini(prompt)
+        raw_text = self._call_gemini(
+            prompt=prompt,
+            generation_config={"temperature": 0.1, "responseMimeType": "application/json"},
+        )
         parsed = _extract_json_object(raw_text)
 
         aspects = [
@@ -161,46 +201,85 @@ class LlmService:
             raw_model_text=raw_text,
         )
 
-    def _call_gemini(self, prompt: str) -> str:
+    # ------------------------------------------------------------------ #
+    #  Internal — rate-limited, retry-backed Gemini HTTP call             #
+    # ------------------------------------------------------------------ #
+
+    def _call_gemini(
+        self,
+        prompt: str,
+        generation_config: dict[str, Any] | None = None,
+    ) -> str:
+        """Execute a Gemini generateContent call with rate limiting and backoff.
+
+        Algorithm
+        ---------
+        For each attempt (up to _MAX_RETRIES + 1 total):
+          1. Block in _SlidingWindowRateLimiter.acquire() until a slot is free.
+          2. Fire the HTTP request.
+          3. On success, return the text immediately.
+          4. On a retryable status (429 / 500 / 503), wait with full-jitter
+             exponential backoff:  delay = min(base * 2^attempt + U(0, base), max)
+          5. On any other error, raise immediately (no retry).
+        """
         endpoint = (
             "https://generativelanguage.googleapis.com/v1beta/"
             f"models/{self.gemini_model}:generateContent?key={self.gemini_api_key}"
         )
-
-        payload = {
-            "contents": [
-                {
-                    "role": "user",
-                    "parts": [{"text": prompt}],
-                }
-            ],
-            "generationConfig": {
-                "temperature": 0.1,
-                "responseMimeType": "application/json",
-            },
+        payload: dict[str, Any] = {
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
         }
+        if generation_config:
+            payload["generationConfig"] = generation_config
 
-        request = urllib.request.Request(
-            endpoint,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
+        request_data = json.dumps(payload).encode("utf-8")
+        timeout = int(os.getenv("GEMINI_TIMEOUT_SECONDS", "120"))
+
+        for attempt in range(_MAX_RETRIES + 1):
+            _gemini_rate_limiter.acquire()
+
+            req = urllib.request.Request(
+                endpoint,
+                data=request_data,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as response:
+                    data: dict[str, Any] = json.loads(response.read().decode("utf-8"))
+                try:
+                    return data["candidates"][0]["content"]["parts"][0]["text"]
+                except (KeyError, IndexError, TypeError) as exc:
+                    raise RuntimeError(f"Unexpected Gemini response shape: {data}") from exc
+
+            except urllib.error.HTTPError as exc:
+                status_code = exc.code
+                # Read the body now — the HTTPError object is not re-readable.
+                error_body = exc.read().decode("utf-8", errors="replace")
+
+                if status_code in _RETRYABLE_CODES and attempt < _MAX_RETRIES:
+                    # Full-jitter exponential backoff:
+                    #   base * 2^0 + jitter → base * 2^1 + jitter → …
+                    jitter = random.uniform(0.0, _BACKOFF_BASE)
+                    delay = min(_BACKOFF_BASE * (2 ** attempt) + jitter, _BACKOFF_MAX)
+                    time.sleep(delay)
+                    continue
+
+                raise RuntimeError(
+                    f"Gemini API HTTP {status_code}: {error_body}"
+                ) from exc
+
+            except Exception as exc:
+                raise RuntimeError(f"Gemini API request failed: {exc}") from exc
+
+        raise RuntimeError(
+            f"Gemini API: exhausted {_MAX_RETRIES} retries on transient errors."
         )
 
-        try:
-            with urllib.request.urlopen(request, timeout=int(os.getenv("GEMINI_TIMEOUT_SECONDS", "120"))) as response:
-                data = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            error_body = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"Gemini API HTTP {exc.code}: {error_body}") from exc
-        except Exception as exc:
-            raise RuntimeError(f"Gemini API request failed: {exc}") from exc
 
-        try:
-            return data["candidates"][0]["content"]["parts"][0]["text"]
-        except (KeyError, IndexError, TypeError) as exc:
-            raise RuntimeError(f"Unexpected Gemini response shape: {data}") from exc
-
+# ------------------------------------------------------------------ #
+#  Prompt builder                                                      #
+# ------------------------------------------------------------------ #
 
 def _build_review_extraction_prompt(request: LlmReviewExtractionRequest) -> str:
     return f"""
@@ -264,6 +343,10 @@ Important interpretation rules:
 """.strip()
 
 
+# ------------------------------------------------------------------ #
+#  Parsing helpers                                                     #
+# ------------------------------------------------------------------ #
+
 def _extract_json_object(text: str) -> dict[str, Any]:
     cleaned = text.strip()
 
@@ -287,16 +370,14 @@ def _extract_json_object(text: str) -> dict[str, Any]:
 
 def _bounded_float(value: object, default: float) -> float:
     try:
-        number = float(value)
+        number = float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return default
-
     return max(0.0, min(1.0, number))
 
 
 def _optional_str(value: object) -> str | None:
     if value is None:
         return None
-
     text = str(value).strip()
     return text or None

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import ReactECharts from "echarts-for-react";
 import {
   Battery,
@@ -243,6 +243,7 @@ function AspectBreakdown({
     queryFn: () =>
       fetchProductAspects(productId, { start_date: startDate, end_date: endDate }),
     staleTime: 5 * 60_000,
+    placeholderData: keepPreviousData,
   });
 
   return (
@@ -497,6 +498,7 @@ export default function SentimentView({
     queryKey: ["evidence", productId, startDate, endDate],
     queryFn: () => fetchProductEvidence(productId, { ...period, limit: 50 }),
     staleTime: 5 * 60_000,
+    placeholderData: keepPreviousData,
   });
 
   return (

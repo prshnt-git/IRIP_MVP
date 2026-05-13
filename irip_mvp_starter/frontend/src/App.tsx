@@ -21,7 +21,7 @@ import {
   X,
 } from "lucide-react";
 import { create } from "zustand";
-import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   type ProductItem,
   type VisualDashboard,
@@ -41,6 +41,7 @@ import {
   fetchCompetitorBenchmark,
   fetchHealth,
   importReviewsFromCsvUrl,
+  ApiError,
 } from "./api";
 import "./App.css";
 import ReportView from "./components/ReportView";
@@ -79,7 +80,25 @@ const useWorkspaceStore = create<WorkspaceState>((set) => ({
 // TanStack Query client
 // ============================================================
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Serve cached data for 5 minutes before considering it stale.
+      // Prevents redundant Gemini calls when the user switches tabs.
+      staleTime: 5 * 60 * 1000,
+      // Keep evicted queries in memory for 30 minutes — provides the stale
+      // data backing for graceful degradation when a 429 occurs.
+      gcTime: 30 * 60 * 1000,
+      // Never auto-retry a 429 — it makes the rate-limit situation worse.
+      // Allow up to 2 retries for other transient errors (500, network drops).
+      retry: (failureCount, error) => {
+        if (error instanceof ApiError && error.isRateLimit) return false;
+        return failureCount < 2;
+      },
+      retryDelay: (attemptIndex) => Math.min(1_000 * 2 ** attemptIndex, 30_000),
+    },
+  },
+});
 
 // ============================================================
 // Local types (UI-only — not from API)
@@ -549,6 +568,7 @@ export default function App() {
         />
 
         <WarmingBanner visible={warmingUp} />
+        <RateLimitBanner />
 
         <div className="irip-body-grid">
           <main className="irip-left-workspace">
@@ -650,6 +670,35 @@ function WarmingBanner({ visible }: { visible: boolean }) {
       <span>
         Backend warming up… this takes about 30 seconds on first load.
       </span>
+    </div>
+  );
+}
+
+// ============================================================
+// Rate-limit degradation banner
+// ============================================================
+
+function RateLimitBanner() {
+  const qc = useQueryClient();
+  const [show, setShow] = useState(false);
+
+  useEffect(() => {
+    const cache = qc.getQueryCache();
+    const unsub = cache.subscribe(() => {
+      const isRateLimited = cache
+        .getAll()
+        .some((q) => q.state.error instanceof ApiError && q.state.error.isRateLimit);
+      setShow(isRateLimited);
+    });
+    return unsub;
+  }, [qc]);
+
+  if (!show) return null;
+
+  return (
+    <div className="rate-limit-banner" role="status" aria-live="polite">
+      <RefreshCw size={13} className="spin" />
+      <span>Data is being refreshed — Gemini AI is briefly busy. Showing last known results.</span>
     </div>
   );
 }
@@ -974,6 +1023,7 @@ function CompetitorView({
       }),
     enabled: hasCompetitor && Boolean(productId && competitorId),
     staleTime: 5 * 60 * 1000,
+    placeholderData: keepPreviousData,
   });
 
   const ownCount = benchmarkData?.own_review_count ?? getReviewCount(dashboard);

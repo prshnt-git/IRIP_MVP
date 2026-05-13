@@ -4414,6 +4414,26 @@ body,
 }
 
 /* ══════════════════════════════════════════════════════════════
+   Rate-limit degradation banner
+   Shown when any TanStack Query returns a 429 (Gemini busy).
+   Serves stale cached data; banner disappears once requests succeed.
+   ══════════════════════════════════════════════════════════════ */
+
+.rate-limit-banner {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: rgba(234, 179, 8, 0.08);
+  border: 1px solid rgba(234, 179, 8, 0.35);
+  border-radius: 12px;
+  padding: 10px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #7a5c00;
+  margin: 4px 16px 0;
+}
+
+/* ══════════════════════════════════════════════════════════════
    ErrorBoundary — eb-*
    ══════════════════════════════════════════════════════════════ */
 
