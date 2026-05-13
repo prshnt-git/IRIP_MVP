@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(node -e \"const p=require\\('./node_modules/@tailwindcss/vite/package.json'\\); console.log\\('@tailwindcss/vite:', p.version\\)\")",
+      "Bash(node -e \"const p=require\\('./node_modules/tailwindcss/package.json'\\); console.log\\('tailwindcss:', p.version\\)\")",
+      "Bash(node -e \"const p=require\\('./node_modules/vite/package.json'\\); console.log\\('vite:', p.version\\)\")",
+      "Bash(npm install *)",
+      "Bash(node -e \"console.log\\('@tailwindcss/vite:', require\\('./node_modules/@tailwindcss/vite/package.json'\\).version, '| tailwindcss:', require\\('./node_modules/tailwindcss/package.json'\\).version\\)\")"
+    ]
+  }
+}
