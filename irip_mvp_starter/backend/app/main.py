@@ -1,8 +1,10 @@
+import os
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, Header, HTTPException, Query, UploadFile
+from fastapi.responses import JSONResponse
 
 from app.core.config import get_settings
 from app.db.database import connect
@@ -391,7 +393,10 @@ def get_database_stats() -> DatabaseStats:
 
 
 @app.post("/debug/reset-review-data", response_model=DatabaseStats)
-def reset_review_data() -> DatabaseStats:
+def reset_review_data(x_debug_key: str | None = Header(default=None)) -> DatabaseStats:
+    expected = os.getenv("DEBUG_SECRET_KEY")
+    if not expected or x_debug_key != expected:
+        return JSONResponse(status_code=403, content={"error": "forbidden"})
     return DatabaseStats(**repository.reset_review_data())
 
 
