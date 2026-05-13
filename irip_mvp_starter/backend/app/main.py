@@ -4,7 +4,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import FastAPI, File, Header, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse
 
 from app.core.config import get_settings
@@ -98,9 +98,26 @@ app.add_middleware(
         "https://irip-mvp.vercel.app",
     ],
     allow_credentials=False,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PATCH"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
+
+
+def _require_pipeline_key(x_pipeline_key: str | None = Header(default=None)) -> None:
+    """FastAPI dependency — rejects requests that do not carry the correct pipeline key."""
+    expected = settings.pipeline_secret_key
+    if not expected or x_pipeline_key != expected:
+        raise HTTPException(status_code=403, detail="Forbidden: invalid or missing pipeline key.")
 
 router = ResourceRouter()
 
@@ -380,7 +397,7 @@ def analyze_review(review: ReviewInput) -> ReviewAnalysis:
     return analyzer.analyze(review)
 
 
-@app.post("/reviews/import-csv", response_model=ImportResult)
+@app.post("/reviews/import-csv", response_model=ImportResult, dependencies=[Depends(_require_pipeline_key)])
 async def import_reviews_csv(file: UploadFile = File(...)) -> ImportResult:
     raw_bytes = await file.read()
     csv_text = raw_bytes.decode("utf-8-sig")
@@ -392,7 +409,7 @@ def import_reviews_csv_url(payload: CsvUrlImportRequest) -> ImportResult:
     return importer.import_csv_url(payload.url)
 
 
-@app.get("/debug/db-stats", response_model=DatabaseStats)
+@app.get("/debug/db-stats", response_model=DatabaseStats, dependencies=[Depends(_require_pipeline_key)])
 def get_database_stats() -> DatabaseStats:
     return DatabaseStats(**repository.get_database_stats())
 
@@ -410,7 +427,7 @@ def get_llm_status() -> LlmProviderStatus:
     return llm_service.status()
 
 
-@app.post("/llm/mode", response_model=LlmModeUpdateResponse)
+@app.post("/llm/mode", response_model=LlmModeUpdateResponse, dependencies=[Depends(_require_pipeline_key)])
 def update_llm_mode(payload: LlmModeUpdateRequest) -> LlmModeUpdateResponse:
     try:
         mode = llm_service.set_mode(payload.mode)
@@ -423,7 +440,7 @@ def update_llm_mode(payload: LlmModeUpdateRequest) -> LlmModeUpdateResponse:
     )
 
 
-@app.post("/llm/extract-review", response_model=LlmReviewExtractionResponse)
+@app.post("/llm/extract-review", response_model=LlmReviewExtractionResponse, dependencies=[Depends(_require_pipeline_key)])
 def extract_review_with_llm(
     payload: LlmReviewExtractionRequest,
 ) -> LlmReviewExtractionResponse:

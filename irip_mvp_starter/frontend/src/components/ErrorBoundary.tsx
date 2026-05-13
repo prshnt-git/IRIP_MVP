@@ -46,7 +46,7 @@ export default class ErrorBoundary extends Component<BoundaryProps, BoundaryStat
               </button>
               <a
                 className="eb-report-link"
-                href={`mailto:sachin.addey@gmail.com?subject=${encodeURIComponent("IRIP Error Report")}&body=${encodeURIComponent(`Error: ${this.state.error?.message ?? "unknown"}\nTab: ${this.props.label ?? "unknown"}`)}`}
+                href={`mailto:yes.prshnt@gmail.com?subject=${encodeURIComponent("IRIP Error Report")}&body=${encodeURIComponent(`Error: ${this.state.error?.message ?? "unknown"}\nTab: ${this.props.label ?? "unknown"}`)}`}
               >
                 Report Issue
               </a>

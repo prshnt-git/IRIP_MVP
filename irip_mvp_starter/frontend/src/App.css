@@ -453,9 +453,13 @@ button {
 /* Overview */
 
 .overview-view {
-  display: grid;
-  grid-template-rows: auto minmax(190px, 1fr) auto;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  padding-right: 4px;
 }
 
 .insight-card-grid {
@@ -3355,10 +3359,14 @@ body,
    ========================================================= */
 
 .sentv-root {
+  height: 100%;
   display: flex;
   flex-direction: column;
   gap: 20px;
   padding-bottom: 24px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
 }
 
 .sentv-header {
@@ -3720,10 +3728,14 @@ body,
    ========================================================= */
 
 .mkt-root {
+  height: 100%;
   display: flex;
   flex-direction: column;
   gap: 24px;
   padding-bottom: 24px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
 }
 
 /* ── Header ────────────────────────────────────────────── */
@@ -4126,10 +4138,14 @@ body,
    ══════════════════════════════════════════════════════════════ */
 
 .trv-root {
+  height: 100%;
   display: flex;
   flex-direction: column;
   gap: 28px;
-  padding: 4px 0 32px;
+  padding: 4px 2px 32px 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
 }
 
 /* ── Header ──────────────────────────────────────────────────── */

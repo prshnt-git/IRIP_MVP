@@ -1,0 +1,202 @@
+================================================================================
+IRIP — INDIA REVIEW INTELLIGENCE PLATFORM
+PROJECT STATUS DOCUMENT  |  Last updated: 2026-05-13
+Share this file at the start of any new Claude session.
+================================================================================
+
+PROJECT IDENTITY
+----------------
+Name    : IRIP — India Review Intelligence Platform
+Owner   : Prashant (Transsion India — brands: itel, Infinix, Tecno)
+Purpose : Scrape Amazon.in / Flipkart smartphone reviews → Gemini AI analysis
+          → competitive intelligence dashboard for product managers
+Type    : Personal/portfolio project
+
+
+LIVE DEPLOYMENTS
+----------------
+Frontend  : https://irip-mvp.vercel.app                  (Vercel)
+Backend   : https://irip-api.onrender.com                 (Render free tier)
+Health    : https://irip-api.onrender.com/health
+Repo      : github.com/prashant-tiwari (private)
+Data WS   : https://docs.google.com/spreadsheets/d/1whhBvVjxHpOEqgY7JCGcjM0TXYh4dVlEIFhSRs9gnQI
+
+
+TECH STACK
+----------
+Backend  : Python 3.12, FastAPI, SQLite (irip.db), SQLAlchemy, Gemini 2.5 Flash
+Frontend : React 19, TypeScript 6, Vite 8, TanStack Query v5, Zustand,
+           Framer Motion, Apache ECharts, lucide-react, Tailwind CSS v4
+Infra    : Render free tier (backend), Vercel (frontend), GitHub Actions (scraper)
+AI       : Gemini 2.5 Flash via google-generativeai SDK
+           Model ID: gemini-2.5-flash
+           Access: ONLY via backend/app/pipeline/hybrid_analyzer.py
+
+
+KEY ENV VARS (backend/.env — NEVER commit)
+------------------------------------------
+GEMINI_API_KEY=...
+GEMINI_MODEL=gemini-2.5-flash
+IRIP_LLM_MODE=selective
+IRIP_LLM_PROVIDER=gemini
+PIPELINE_SECRET_KEY=...           ← also set as GitHub Actions secret
+
+
+PROJECT FILE STRUCTURE
+----------------------
+irip_mvp_starter/
+├── CLAUDE.md                         ← Project bible for Claude (read first)
+├── backend/
+│   ├── app/
+│   │   ├── main.py                   ← All FastAPI routes (40+ endpoints)
+│   │   ├── core/config.py            ← Settings (pydantic-settings)
+│   │   ├── db/database.py            ← SQLite connection
+│   │   ├── db/repository.py          ← All DB queries
+│   │   ├── pipeline/hybrid_analyzer.py  ← Gemini analysis pipeline
+│   │   ├── pipeline/review_analyzer.py  ← Rule-based analysis
+│   │   └── schemas/                  ← Pydantic models
+│   └── requirements.txt
+├── frontend/
+│   ├── src/
+│   │   ├── App.tsx                   ← Main app (1999 lines) — all tabs + controls
+│   │   ├── App.css                   ← All CSS (4500+ lines)
+│   │   ├── api.ts                    ← All API calls (never fetch() in components)
+│   │   └── components/
+│   │       ├── ErrorBoundary.tsx     ← Error boundary + EmptyReviewsCard
+│   │       ├── OverviewView.tsx      ← Overview tab (standalone)
+│   │       ├── QualityView.tsx       ← Trust tab (standalone)
+│   │       ├── SentimentView.tsx     ← Sentiment tab (standalone)
+│   │       ├── MarketTab.tsx         ← Market tab (standalone)
+│   │       └── ReportView.tsx        ← Report tab (standalone)
+│   ├── vercel.json                   ← Rewrites /api/* → irip-api.onrender.com/*
+│   └── vite.config.ts                ← Dev proxy: /api → localhost:8000
+├── .github/workflows/
+│   ├── daily-scrape.yml              ← Runs at 2:30 AM UTC (8:00 AM IST) daily
+│   └── weekly-discovery.yml          ← Runs at 3:00 AM UTC Monday (8:30 AM IST)
+└── scripts/ (at repo root, above irip_mvp_starter)
+    ├── run_daily_scrape.py           ← Called by daily-scrape.yml
+    └── product_catalog.json          ← Products to scrape (needs real ASINs)
+
+
+DASHBOARD TABS — CURRENT STATUS
+---------------------------------
+Tab         Status      Notes
+----------- ----------- --------------------------------------------------
+Overview    COMPLETE    Framer Motion stagger, AI Brief card, fairness banner,
+                        KPI cards, last-updated timestamp, EmptyReviewsCard
+Insights    COMPLETE    AI-driven product summary, forecast, aspect intelligence
+Sentiment   COMPLETE    SentimentView v2 — aspect drill-down, ECharts, Hinglish
+Benchmark   COMPLETE    Radar chart, gap analysis, review count tooltip
+Market      COMPLETE    MarketTab — Gemini news brief, market signals
+Trust       COMPLETE    QualityView — dedup stats, "How It Works" expandable
+Report      COMPLETE    ReportView — downloadable JSON report
+
+
+FRONTEND FEATURES BUILT (Task C — final polish session)
+---------------------------------------------------------
+1. ErrorBoundary.tsx          Tab-level crash isolation. Reports to sachin.addey@gmail.com
+2. WarmingBanner              Cold-start UX: appears after 3s, hides when /health responds
+3. EmptyReviewsCard           Shown for 0-review products in Overview/Insights/Sentiment
+4. AI Brief card (Overview)   2-sentence preview of intelligence brief + "Read full brief →"
+5. Benchmark tooltip          Info icon on "Review Gap Chart" with own/competitor counts
+6. Product selector UX        Own product selector uses <optgroup>; competitor has grouped
+                              optgroups (Our Products / Competitors) + search when >10 items
+7. Dynamic page title         document.title = "IRIP — {product} vs {competitor}"
+
+
+GITHUB ACTIONS — AUTOMATION
+-----------------------------
+daily-scrape.yml:
+  - Cron: 2:30 AM UTC = 8:00 AM IST, every day
+  - Steps: wake Render → run scripts/run_daily_scrape.py → POST CSV to /reviews/import-csv
+  - Manual trigger: GitHub Actions → daily-scrape.yml → Run workflow (input: days_back)
+  - Secret required: PIPELINE_SECRET_KEY (set in GitHub repo Settings → Secrets)
+
+weekly-discovery.yml:
+  - Cron: 3:00 AM UTC Monday = 8:30 AM IST Monday
+  - Calls POST /products/discover?months_back=4
+  - Manual trigger: available with months_back input
+
+
+IMPORTANT CODING RULES (enforce in every session)
+---------------------------------------------------
+1. All Gemini calls → pipeline/hybrid_analyzer.py ONLY
+2. All DB queries → db/repository.py ONLY
+3. All frontend API calls → src/api.ts ONLY (never fetch() in components)
+4. Never commit backend/.env
+5. No `any` in TypeScript; no untyped Python functions
+6. Write complete files, not snippets
+7. Error handling everywhere
+
+
+WHAT STILL NEEDS DOING
+-----------------------
+[ ] Add real ASINs to scripts/product_catalog.json
+    - Visit amazon.in → search phone → ASIN is in URL: amazon.in/dp/BXXXXXXXXXX
+    - Products to add: Infinix Hot 50 Pro, Tecno Pova 6, itel A90s, Samsung M35, Redmi 14C
+
+[ ] Trigger GitHub Action manually to test (first run):
+    - GitHub → Actions → daily-scrape.yml → Run workflow → days_back=30
+
+[ ] Verify Render deployment:
+    - dashboard.render.com → check build logs
+    - Must see: "INFO: Application startup complete."
+
+[ ] Verify Vercel deployment:
+    - vercel.com/dashboard → check deployment status
+
+[ ] Full end-to-end test (irip-mvp.vercel.app):
+    - Cold load: warming up banner appears then disappears
+    - Product selector: auto-selects Infinix/Tecno/itel product
+    - Overview tab: metrics load with animation
+    - Insights tab: AI brief loads
+    - Sentiment tab: aspect cards work
+    - Benchmark tab: radar chart shows
+    - Trust tab: dedup stats show
+    - Report tab: JSON download works
+
+[ ] Phase 3 (future): shadcn/ui components, Supabase PostgreSQL migration
+[ ] Phase 4 (future): regional language support, spec collection automation
+
+
+GIT STATUS AT TIME OF WRITING
+-------------------------------
+Branch: main
+Last commit: 25cdeb1 — feat: upgrade QualityView and OverviewView as standalone components
+
+Files modified but NOT YET committed (pending push):
+  M frontend/src/App.tsx          (all 7 Task C polish improvements)
+  M frontend/src/App.css          (new CSS: warming-banner, eb-*, ovv-brief-*, etc.)
+  M frontend/src/api.ts           (added fetchHealth, fetchDedupStats)
+  M frontend/src/components/OverviewView.tsx  (AI Brief card)
+  ?? frontend/src/components/ErrorBoundary.tsx  (new file — not yet tracked)
+
+Command to push everything:
+  cd irip_mvp_starter
+  git add frontend/src/App.tsx frontend/src/App.css frontend/src/api.ts
+  git add frontend/src/components/OverviewView.tsx
+  git add frontend/src/components/ErrorBoundary.tsx
+  git commit -m "feat: final polish — error boundaries, warming banner, AI brief, optgroup selectors"
+  git push origin main
+
+
+KNOWN WORKING / KNOWN ISSUES
+------------------------------
+WORKING:
+- Build: npm run build passes with 0 TypeScript errors (verified 2026-05-13)
+- Workflow files: daily-scrape.yml and weekly-discovery.yml — no syntax errors
+- All 7 dashboard tabs render (with sample/imported data)
+- Framer Motion animations compile correctly (ease: "easeOut" as const)
+- TanStack Query deduplication — benchmark query shared between OverviewView + CompetitorView
+
+KNOWN LIMITATION:
+- Render free tier sleeps after 15 min idle — cold-start takes ~30s (warming banner handles this)
+- SQLite is local to Render instance — data resets on redeploy (Phase 3: migrate to Supabase)
+- ECharts bundle is 2MB (expected — chunk warning is not an error)
+- scripts/product_catalog.json has placeholder ASINs — real ones needed before scraper runs
+
+
+CONTACTS
+---------
+Owner email : yes.prshnt@gmail.com  (also used for ErrorBoundary report-issue link)
+================================================================================
