@@ -1202,7 +1202,69 @@ class ReviewRepository:
                 params,
             ).fetchall()
 
-        return [dict(row) for row in rows]
+        result = [dict(row) for row in rows]
+        for item in result:
+            item["language_type"] = _detect_language_type(item.get("raw_text", ""))
+        return result
+
+    def get_sub_aspects(
+        self,
+        product_id: str,
+        aspect: str,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> dict[str, float]:
+        """Return signed-intensity sub-aspect scores for a given aspect.
+
+        Currently only camera sub-aspects are classified (front/night/video/overall).
+        Returns an empty dict when no evidence rows exist.
+        """
+        where_sql, params = _period_filter("r", product_id, start_date, end_date)
+        params.append(aspect)
+
+        with connect(self.database_path) as connection:
+            rows = connection.execute(
+                f"""
+                SELECT a.evidence_span, a.sentiment, a.intensity
+                FROM aspect_sentiments a
+                JOIN reviews_raw r ON r.review_id = a.review_id
+                WHERE {where_sql} AND a.aspect = ?
+                """,
+                params,
+            ).fetchall()
+
+        buckets: dict[str, list[float]] = {
+            "camera_front": [],
+            "camera_night": [],
+            "camera_video": [],
+            "camera_overall": [],
+        }
+
+        for row in rows:
+            span = row["evidence_span"] or ""
+            intensity = float(row["intensity"] or 0)
+            if row["sentiment"] == "positive":
+                signed = intensity
+            elif row["sentiment"] == "negative":
+                signed = -intensity
+            else:
+                signed = 0.0
+
+            if _CAMERA_FRONT.search(span):
+                buckets["camera_front"].append(signed)
+            elif _CAMERA_NIGHT.search(span):
+                buckets["camera_night"].append(signed)
+            elif _CAMERA_VIDEO.search(span):
+                buckets["camera_video"].append(signed)
+            else:
+                buckets["camera_overall"].append(signed)
+
+        return {
+            sub: round(sum(scores) / len(scores) * 100, 1)
+            for sub, scores in buckets.items()
+            if scores
+        }
+
 
 def _normalize_review_text(value: str) -> str:
     text = value.lower().strip()
@@ -1213,6 +1275,28 @@ def _normalize_review_text(value: str) -> str:
 
 def _hash_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+_HINGLISH_MARKERS = re.compile(
+    r"\b(mast|bakwas|ekdum|nahi|nahin|hai|bahut|bhai)\b",
+    re.IGNORECASE,
+)
+
+_CAMERA_FRONT = re.compile(r"front[\s\-]?cam|selfie", re.IGNORECASE)
+_CAMERA_NIGHT = re.compile(r"night|low[\s\-]?light|dark(?:ness)?", re.IGNORECASE)
+_CAMERA_VIDEO = re.compile(r"video|reel|recording", re.IGNORECASE)
+
+
+def _detect_language_type(text: str) -> str:
+    """Return 'hinglish', 'mixed', or 'english' based on Hinglish marker density."""
+    if not text:
+        return "english"
+    count = len(_HINGLISH_MARKERS.findall(text))
+    if count >= 3:
+        return "hinglish"
+    if count >= 1:
+        return "mixed"
+    return "english"
 
 
 def _first_present(*values):

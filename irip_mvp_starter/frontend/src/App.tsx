@@ -42,6 +42,8 @@ import {
   importReviewsFromCsvUrl,
 } from "./api";
 import "./App.css";
+import ReportView from "./components/ReportView";
+import SentimentView from "./components/SentimentView";
 
 // ============================================================
 // Zustand store — shared selection state
@@ -780,6 +782,14 @@ export default function App() {
                   report={report}
                   onOpenEvidence={() => setEvidenceOpen(true)}
                   onOpenReport={() => setReportOpen(true)}
+                  productId={selectedProductId}
+                  competitorId={selectedCompetitorId}
+                  startDate={timePeriod.startDate}
+                  endDate={timePeriod.endDate}
+                  productName={
+                    products.find((p) => p.product_id === selectedProductId)
+                      ?.product_name ?? selectedProductId
+                  }
                 />
               ) : (
                 <EmptyWorkspace onRetry={() => void loadWorkspace()} />
@@ -957,12 +967,22 @@ function MainVisualTile({
   report,
   onOpenEvidence,
   onOpenReport,
+  productId,
+  competitorId,
+  startDate,
+  endDate,
+  productName,
 }: {
   activeView: ViewKey;
   dashboard: VisualDashboard;
   report: ExecutiveReport | null;
   onOpenEvidence: () => void;
   onOpenReport: () => void;
+  productId: string;
+  competitorId: string;
+  startDate: string;
+  endDate: string;
+  productName: string;
 }) {
   return (
     <div
@@ -986,7 +1006,12 @@ function MainVisualTile({
           onOpenReport={onOpenReport}
         />
       ) : activeView === "sentiment" ? (
-        <SentimentView dashboard={dashboard} />
+        <SentimentView
+          productId={productId}
+          startDate={startDate}
+          endDate={endDate}
+          dashboard={dashboard}
+        />
       ) : activeView === "competitor" ? (
         <CompetitorView
           dashboard={dashboard}
@@ -998,10 +1023,12 @@ function MainVisualTile({
         <QualityView dashboard={dashboard} report={report} />
       ) : (
         <ReportView
-          report={report}
+          productId={productId}
+          competitorId={competitorId}
+          startDate={startDate}
+          endDate={endDate}
+          productName={productName}
           dashboard={dashboard}
-          onOpenReport={onOpenReport}
-          onOpenEvidence={onOpenEvidence}
         />
       )}
     </div>
@@ -1130,164 +1157,6 @@ function SummaryView({
           </article>
         ))}
       </div>
-    </div>
-  );
-}
-
-function SentimentView({ dashboard }: { dashboard: VisualDashboard }) {
-  const insightCards = dashboard.sentiment_insight_cards || [];
-  const reasonCards = dashboard.aspect_reason_cards || [];
-  const volumeRows = dashboard.top_aspect_chart?.data || [];
-  const ratingCard = dashboard.kpi_cards.find(
-    (card) => card.id === "average_rating"
-  );
-
-  const mood = findKpiCard(insightCards, "mood_balance");
-  const liked = findKpiCard(insightCards, "dominant_positive_area");
-  const complaint = findKpiCard(insightCards, "dominant_negative_area");
-
-  const topCards = [
-    {
-      id: "mood",
-      label: "Mood",
-      value: mood?.value || "Not clear",
-      helper: cleanShortSentimentLine(
-        mood?.helper_text || "Based on current review signals."
-      ),
-      tone: mood?.status || "neutral",
-    },
-    {
-      id: "liked",
-      label: "Liked Area",
-      value: liked?.value || "Not clear",
-      helper: "Area users respond to most positively.",
-      tone: "good",
-    },
-    {
-      id: "complaint",
-      label: "Complaint Area",
-      value: complaint?.value || "Not clear",
-      helper: "Area users complain about most.",
-      tone: "bad",
-    },
-    {
-      id: "rating",
-      label: "Average Rating",
-      value: ratingCard?.value ?? "—",
-      helper: "Average user rating in selected reviews.",
-      tone: "neutral",
-    },
-  ];
-
-  return (
-    <div className="sentiment-final-view">
-      <div className="tile-section-header sentiment-final-header">
-        <div>
-          <p className="irip-eyebrow">Sentiment</p>
-          <h2>What users feel about this product</h2>
-        </div>
-      </div>
-
-      <div className="sentiment-final-top-cards">
-        {topCards.map((card) => (
-          <article
-            className={`sentiment-final-card ${statusTone(card.tone || "")}`}
-            key={card.id}
-          >
-            <span>{card.label}</span>
-            <strong>{formatValue(card.value)}</strong>
-            <p>{card.helper}</p>
-          </article>
-        ))}
-      </div>
-
-      <div className="sentiment-final-chart-row">
-        <section className="sentiment-final-panel sentiment-final-donut">
-          <EChartCard
-            chart={dashboard.sentiment_distribution_chart}
-            variant="donut"
-            compact
-          />
-        </section>
-
-        <section className="sentiment-final-panel">
-          <div className="sentiment-final-panel-head">
-            <div>
-              <span>Discussion Volume</span>
-              <h3>What users mention most</h3>
-            </div>
-            <small>Longer bar = more mentions</small>
-          </div>
-
-          <div className="sentiment-final-volume-list">
-            {volumeRows.length ? (
-              volumeRows.map((item) => (
-                <div
-                  className="sentiment-final-volume-row"
-                  key={item.label}
-                >
-                  <span>{labelize(item.label)}</span>
-                  <div>
-                    <i
-                      style={{
-                        width: `${volumePercent(item.value, volumeRows)}%`,
-                      }}
-                    />
-                  </div>
-                  <strong>{item.value}</strong>
-                </div>
-              ))
-            ) : (
-              <EmptyCard
-                title="No aspect mentions yet"
-                text="Import reviews to see what users discuss most."
-              />
-            )}
-          </div>
-        </section>
-      </div>
-
-      <section className="sentiment-final-panel sentiment-final-aspects">
-        <div className="sentiment-final-panel-head">
-          <div>
-            <span>Aspect View</span>
-            <h3>What users are mentioning inside each area</h3>
-          </div>
-          <small>{reasonCards.length} aspect(s)</small>
-        </div>
-
-        <div className="sentiment-final-aspect-list">
-          {reasonCards.length ? (
-            reasonCards.map((item) => (
-              <article
-                className="sentiment-final-aspect-row"
-                key={item.aspect}
-              >
-                <div className="sentiment-final-aspect-main">
-                  <strong>{labelize(item.aspect)}</strong>
-                  <span
-                    className={`sentiment-final-pill ${sentimentCleanTone(
-                      item.reaction
-                    )}`}
-                  >
-                    {cleanReactionLabel(item.reaction)}
-                  </span>
-                </div>
-                <p>{item.one_liner}</p>
-                <small className="sentiment-final-meta">
-                  {item.mention_count} mention(s)
-                  {item.reason_source ? ` · ${item.reason_source}` : ""}
-                </small>
-              </article>
-            ))
-          ) : (
-            <EmptyCard
-              title="No aspect view yet"
-              text="Aspect-level comments will appear after reviews are analyzed."
-            />
-          )}
-        </div>
-      </section>
     </div>
   );
 }
@@ -1601,7 +1470,8 @@ function QualityView({
   );
 }
 
-function ReportView({
+// @ts-ignore — retained for reference; superseded by src/components/ReportView.tsx
+function _LegacyReportView({
   report,
   dashboard,
   onOpenReport,

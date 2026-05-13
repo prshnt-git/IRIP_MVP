@@ -56,6 +56,7 @@ class AspectSummaryItem(BaseModel):
     neutral_count: int
     avg_confidence: float | None
     aspect_score: float = Field(ge=-100, le=100)
+    sub_aspects: dict[str, float] | None = None
 
 
 class CsvUrlImportRequest(BaseModel):

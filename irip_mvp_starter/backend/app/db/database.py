@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import sqlite3
 
-CURRENT_SCHEMA_VERSION = 7
+CURRENT_SCHEMA_VERSION = 8
 
 SCHEMA_SQL = """
 PRAGMA foreign_keys = ON;
@@ -257,6 +257,16 @@ CREATE TABLE IF NOT EXISTS schema_version (
     applied_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS scrape_log (
+    review_hash TEXT PRIMARY KEY,
+    product_id  TEXT,
+    source      TEXT,
+    scraped_at  TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_scrape_log_scraped_at
+ON scrape_log(scraped_at);
+
 CREATE INDEX IF NOT EXISTS idx_extraction_feedback_review
 ON extraction_feedback(review_id, product_id, aspect);
 
@@ -343,6 +353,7 @@ def _run_migrations(connection: sqlite3.Connection) -> None:
         (5, _migration_005_news_intelligence),
         (6, _migration_006_news_relevance_refinement),
         (7, _migration_007_product_catalog_and_review_dedup),
+        (8, _migration_008_scrape_log),
     ]
 
     for version, migration in migrations:
@@ -713,6 +724,26 @@ def _migration_007_product_catalog_and_review_dedup(connection: sqlite3.Connecti
     connection.execute("CREATE INDEX IF NOT EXISTS idx_review_sources_canonical ON review_sources(canonical_review_id)")
     connection.execute("CREATE INDEX IF NOT EXISTS idx_review_sources_product ON review_sources(product_id, marketplace)")
     connection.execute("CREATE INDEX IF NOT EXISTS idx_review_duplicate_candidates_product ON review_duplicate_candidates(product_id, duplicate_type, confidence DESC)")
+
+
+def _migration_008_scrape_log(connection: sqlite3.Connection) -> None:
+    """Create the scrape_log table used by the dedup service."""
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS scrape_log (
+            review_hash TEXT PRIMARY KEY,
+            product_id  TEXT,
+            source      TEXT,
+            scraped_at  TEXT
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_scrape_log_scraped_at
+        ON scrape_log(scraped_at)
+        """
+    )
 
 
 def _add_column_if_missing(

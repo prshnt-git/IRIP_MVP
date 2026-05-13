@@ -1,3 +1,4 @@
+import json
 import os
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
@@ -707,10 +708,14 @@ def get_product_aspects(
     start_date: str | None = Query(default=None, description="Inclusive YYYY-MM-DD start date"),
     end_date: str | None = Query(default=None, description="Inclusive YYYY-MM-DD end date"),
 ) -> list[AspectSummaryItem]:
-    return [
-        AspectSummaryItem(**item)
-        for item in repository.get_aspect_summary(product_id, start_date, end_date)
-    ]
+    rows = repository.get_aspect_summary(product_id, start_date, end_date)
+    camera_subs: dict | None = None
+    for item in rows:
+        if item["aspect"] == "camera":
+            if camera_subs is None:
+                camera_subs = repository.get_sub_aspects(product_id, "camera", start_date, end_date) or None
+            item["sub_aspects"] = camera_subs
+    return [AspectSummaryItem(**item) for item in rows]
 
 
 @app.get("/products/{product_id}/evidence")
@@ -1047,6 +1052,7 @@ def get_executive_report(
     competitor_product_id: str | None = Query(default=None),
     start_date: str | None = Query(default=None, description="Inclusive YYYY-MM-DD start date"),
     end_date: str | None = Query(default=None, description="Inclusive YYYY-MM-DD end date"),
+    include_narrative: bool = Query(default=False),
 ) -> ExecutiveReportResponse:
     result = executive_report_service.build_report(
         product_id=product_id,
@@ -1054,6 +1060,36 @@ def get_executive_report(
         start_date=start_date,
         end_date=end_date,
     )
+
+    if include_narrative:
+        mode = os.getenv("IRIP_LLM_MODE", "selective").strip().lower()
+        if mode != "off":
+            try:
+                data_json = json.dumps(
+                    {
+                        "product_id": result["product_id"],
+                        "confidence_note": result["confidence_note"],
+                        "executive_summary": result["executive_summary"][:4],
+                        "key_strengths": result["key_strengths"][:4],
+                        "key_risks": result["key_risks"][:4],
+                        "competitor_takeaways": result["competitor_takeaways"][:3],
+                        "recommended_actions": result["recommended_actions"][:4],
+                    },
+                    indent=2,
+                )
+                prompt = (
+                    f"You are a senior market analyst. Using ONLY this data: {data_json}.\n"
+                    "Write a professional 4-paragraph intelligence report:\n"
+                    "Para 1: Overall product reception and key metric (use actual numbers).\n"
+                    "Para 2: Top 3 consumer praises with evidence from reviews.\n"
+                    "Para 3: Top 3 consumer complaints and actionable implications.\n"
+                    "Para 4: Competitive position and one specific recommendation.\n"
+                    "Tone: direct, professional, no fluff. Every claim must reference the data."
+                )
+                result["executive_narrative"] = llm_service.generate_narrative(prompt)
+            except Exception:
+                result["executive_narrative"] = None
+
     return ExecutiveReportResponse(**result)
 
 @app.get("/acquisition/providers")
@@ -1181,6 +1217,116 @@ def list_review_duplicates(
         ).fetchall()
 
     return [dict(row) for row in rows]
+
+
+@app.get("/trust/dedup-stats")
+def get_dedup_stats() -> dict:
+    """Return scrape-log deduplication statistics for the Trust tab."""
+    from app.services.dedup import get_stats
+
+    return get_stats(settings.database_path)
+
+
+@app.post("/sheets/sync")
+def sync_sheets(
+    days_back: int = Query(default=30, ge=1, le=120),
+    x_pipeline_key: str | None = Header(default=None),
+) -> dict:
+    """Sync SQLite data to Google Sheets (four tabs).
+
+    Requires GOOGLE_SHEETS_CREDENTIALS and GOOGLE_SHEETS_SPREADSHEET_ID
+    environment variables. Protected by X-Pipeline-Key header.
+    """
+    expected = settings.pipeline_secret_key
+    if not expected or x_pipeline_key != expected:
+        return JSONResponse(status_code=403, content={"error": "forbidden"})
+
+    spreadsheet_id = os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID", "").strip()
+    if not spreadsheet_id:
+        raise HTTPException(
+            status_code=503,
+            detail="GOOGLE_SHEETS_SPREADSHEET_ID is not configured.",
+        )
+
+    from app.services.sheets_sync import SheetsSyncService
+
+    try:
+        service = SheetsSyncService(spreadsheet_id=spreadsheet_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Google Sheets authentication failed: {exc}",
+        ) from exc
+
+    result = service.sync_all(db_path=settings.database_path, days_back=days_back)
+    return result
+
+
+@app.post("/products/discover")
+def discover_new_products(
+    months_back: int = Query(default=6, ge=1, le=12),
+    x_pipeline_key: str | None = Header(default=None),
+) -> dict:
+    """Discover newly launched India smartphones (₹10k–₹35k) and add to catalog.
+
+    Scrapes 91mobiles and GSMArena, deduplicates, enriches specs, then imports
+    any products not already in the catalog. Slow endpoint — runs in GitHub Actions,
+    not called from the frontend. Protected by X-Pipeline-Key header.
+    """
+    expected = settings.pipeline_secret_key
+    if not expected or x_pipeline_key != expected:
+        return JSONResponse(status_code=403, content={"error": "forbidden"})
+
+    import csv
+    import io
+
+    from app.scrapers.product_discovery import ProductDiscovery
+    from app.services.product_catalog_service import ProductCatalogService
+
+    try:
+        discovery = ProductDiscovery()
+        result = discovery.run_discovery(months_back=months_back)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Discovery failed: {exc}") from exc
+
+    if not result["new_products"]:
+        return {
+            "discovered": result["discovered"],
+            "new_products_count": 0,
+            "existing_skipped": result["existing_skipped"],
+            "catalog_import": None,
+        }
+
+    # Convert new products to CSV text and import via ProductCatalogService
+    try:
+        fields = list(result["new_products"][0].keys())
+        buffer = io.StringIO()
+        writer = csv.DictWriter(buffer, fieldnames=fields, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(result["new_products"])
+
+        catalog_service = ProductCatalogService()
+        import_result = catalog_service.import_csv_text(buffer.getvalue())
+
+        catalog_payload: dict = {
+            "imported_count": import_result.imported_count,
+            "updated_count": import_result.updated_count,
+            "skipped_count": import_result.skipped_count,
+            "failed_count": import_result.failed_count,
+            "product_ids": import_result.product_ids,
+            "errors": import_result.errors[:10],  # cap error list in response
+        }
+    except Exception as exc:
+        catalog_payload = {"error": str(exc)}
+
+    return {
+        "discovered": result["discovered"],
+        "new_products_count": len(result["new_products"]),
+        "existing_skipped": result["existing_skipped"],
+        "catalog_import": catalog_payload,
+    }
 
 
 # --- IRIP CATALOG-FIRST BENCHMARK PATCH START ---

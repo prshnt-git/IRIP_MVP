@@ -30,3 +30,4 @@ class ExecutiveReportResponse(BaseModel):
     recommended_actions: list[str]
     sections: list[ExecutiveReportSection]
     evidence_links: list[ExecutiveReportEvidenceLink]
+    executive_narrative: str | None = None

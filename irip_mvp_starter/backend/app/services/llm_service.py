@@ -75,6 +75,48 @@ class LlmService:
         os.environ["IRIP_LLM_MODE"] = normalized
         return normalized
 
+    def generate_narrative(self, prompt: str) -> str:
+        """Call Gemini for prose output (plain text, not JSON-constrained)."""
+        if not self.gemini_api_key:
+            raise RuntimeError("GEMINI_API_KEY is not configured.")
+
+        endpoint = (
+            "https://generativelanguage.googleapis.com/v1beta/"
+            f"models/{self.gemini_model}:generateContent?key={self.gemini_api_key}"
+        )
+
+        payload = {
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": 0.4,
+                "maxOutputTokens": 1024,
+            },
+        }
+
+        request = urllib.request.Request(
+            endpoint,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(
+                request,
+                timeout=int(os.getenv("GEMINI_TIMEOUT_SECONDS", "120")),
+            ) as response:
+                data = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            error_body = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"Gemini API HTTP {exc.code}: {error_body}") from exc
+        except Exception as exc:
+            raise RuntimeError(f"Gemini API request failed: {exc}") from exc
+
+        try:
+            return data["candidates"][0]["content"]["parts"][0]["text"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise RuntimeError(f"Unexpected Gemini response shape: {data}") from exc
+
     def extract_review_intelligence(
         self,
         request: LlmReviewExtractionRequest,

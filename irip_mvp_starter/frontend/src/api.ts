@@ -166,6 +166,18 @@ export type EvidenceItem = {
   confidence: number;
   evidence_span: string | null;
   provider: string | null;
+  language_type?: string | null;
+};
+
+export type AspectSummaryItem = {
+  aspect: string;
+  mentions: number;
+  positive_count: number;
+  negative_count: number;
+  neutral_count: number;
+  avg_confidence: number | null;
+  aspect_score: number;
+  sub_aspects?: Record<string, number> | null;
 };
 
 // ============================================================
@@ -380,6 +392,7 @@ export type ExecutiveReport = {
   recommended_actions: string[];
   sections: { title: string; bullets: string[] }[];
   evidence_links: EvidenceLink[];
+  executive_narrative?: string | null;
 };
 
 // ============================================================
@@ -616,6 +629,19 @@ export async function fetchProductEvidence(
   );
 }
 
+export async function fetchProductAspects(
+  productId: string,
+  period?: PeriodFilter
+): Promise<AspectSummaryItem[]> {
+  const query = buildQuery({
+    start_date: period?.start_date,
+    end_date: period?.end_date,
+  });
+  return getJson<AspectSummaryItem[]>(
+    `/products/${encodeURIComponent(productId)}/aspects${query}`
+  );
+}
+
 // ============================================================
 // API — visual dashboard + executive report
 // ============================================================
@@ -647,6 +673,19 @@ export async function fetchExecutiveReport(
     competitor_product_id: params.competitor_product_id,
     start_date: params.start_date,
     end_date: params.end_date,
+  });
+  return getJson<ExecutiveReport>(`/reports/executive${query}`);
+}
+
+export async function fetchReportWithNarrative(
+  params: WorkspaceParams
+): Promise<ExecutiveReport> {
+  const query = buildQuery({
+    product_id: params.product_id,
+    competitor_product_id: params.competitor_product_id,
+    start_date: params.start_date,
+    end_date: params.end_date,
+    include_narrative: "true",
   });
   return getJson<ExecutiveReport>(`/reports/executive${query}`);
 }

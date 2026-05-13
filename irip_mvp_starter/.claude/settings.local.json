@@ -6,7 +6,18 @@
       "Bash(node -e \"const p=require\\('./node_modules/tailwindcss/package.json'\\); console.log\\('tailwindcss:', p.version\\)\")",
       "Bash(node -e \"const p=require\\('./node_modules/vite/package.json'\\); console.log\\('vite:', p.version\\)\")",
       "Bash(npm install *)",
-      "Bash(node -e \"console.log\\('@tailwindcss/vite:', require\\('./node_modules/@tailwindcss/vite/package.json'\\).version, '| tailwindcss:', require\\('./node_modules/tailwindcss/package.json'\\).version\\)\")"
+      "Bash(node -e \"console.log\\('@tailwindcss/vite:', require\\('./node_modules/@tailwindcss/vite/package.json'\\).version, '| tailwindcss:', require\\('./node_modules/tailwindcss/package.json'\\).version\\)\")",
+      "PowerShell(\\(Get-Content \"C:\\\\Users\\\\prashant.tiwari\\\\Desktop\\\\Final Production\\\\IRIP_MVP\\\\irip_mvp_starter\\\\frontend\\\\src\\\\App.tsx\" | Measure-Object -Line\\).Lines)",
+      "Bash(python -c \"from app.services.dedup import generate_review_hash, is_duplicate, mark_scraped, get_stats; print\\('dedup.py OK'\\)\")",
+      "Bash(python -c \"from app.db.database import CURRENT_SCHEMA_VERSION, SCHEMA_SQL; assert 'scrape_log' in SCHEMA_SQL; assert CURRENT_SCHEMA_VERSION == 8; print\\('database.py OK, schema version', CURRENT_SCHEMA_VERSION\\)\")",
+      "Bash(python -c \"import ast, pathlib; src = pathlib.Path\\('app/main.py'\\).read_text\\(\\); ast.parse\\(src\\); print\\('main.py parses OK'\\)\")",
+      "Bash(python -c ' *)",
+      "Read(//c/Users/prashant.tiwari/Desktop/Final Production/IRIP_MVP/**)",
+      "Bash(ls .github/)",
+      "Bash(mkdir -p \"C:\\\\Users\\\\prashant.tiwari\\\\Desktop\\\\Final Production\\\\IRIP_MVP\\\\.github\\\\workflows\")",
+      "Bash(mkdir -p \"C:\\\\Users\\\\prashant.tiwari\\\\Desktop\\\\Final Production\\\\IRIP_MVP\\\\scripts\")",
+      "Bash(npx tsc *)",
+      "Bash(python -c \"import ast, pathlib; [ast.parse\\(p.read_text\\(encoding='utf-8'\\)\\) or print\\('OK:', p\\) for p in [pathlib.Path\\('app/schemas/imports.py'\\), pathlib.Path\\('app/db/repository.py'\\), pathlib.Path\\('app/main.py'\\)]]\")"
     ]
   }
 }
