@@ -425,7 +425,7 @@ export default function App() {
     } else if (pName) {
       document.title = `IRIP — ${pName}`;
     } else {
-      document.title = "IRIP — Review Intelligence Platform";
+      document.title = "IRIP — Review Intelligence Platform · Prashant Tiwari";
     }
   }, [selectedProductId, selectedCompetitorId, products]);
 

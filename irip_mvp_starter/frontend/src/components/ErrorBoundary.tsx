@@ -34,7 +34,7 @@ export default class ErrorBoundary extends Component<BoundaryProps, BoundaryStat
           <div className="eb-card">
             <AlertTriangle size={28} className="eb-icon" />
             <h3>Something went wrong loading this section.</h3>
-            <p>Try refreshing, or contact support if the issue persists.</p>
+            <p>Try refreshing, or contact <strong>Prashant Tiwari</strong> at yes.prshnt@gmail.com if the issue persists.</p>
             <div className="eb-actions">
               <button
                 className="eb-refresh-btn"
