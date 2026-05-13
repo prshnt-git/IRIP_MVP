@@ -15,6 +15,14 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = None
     database_path: str = "data/irip_mvp.db"
 
+    # LLM pipeline settings — mirrored from env vars used across the codebase.
+    irip_llm_mode: str = "selective"
+    irip_llm_provider: str = "gemini"
+
+    # Secret keys for protected endpoints.
+    pipeline_secret_key: str = ""
+    debug_secret_key: str = ""
+
     # Data acquisition settings. These do not enable scraping by themselves;
     # they let us plug in compliant marketplace/API adapters later without
     # changing the core import, normalization, or deduplication pipeline.

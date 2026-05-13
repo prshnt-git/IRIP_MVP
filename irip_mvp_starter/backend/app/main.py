@@ -464,8 +464,8 @@ def get_provider_quality() -> list[ProviderQualityItem]:
     return [ProviderQualityItem(**item) for item in repository.get_provider_quality()]
 
 
-@app.post("/products/import-catalog-csv", response_model=ProductCatalogImportResult)
-async def import_product_catalog_csv(file: UploadFile = File(...)) -> ProductCatalogImportResult:
+@app.post("/products/import-catalog-csv-legacy", response_model=ProductCatalogImportResult)
+async def import_product_catalog_csv_v1(file: UploadFile = File(...)) -> ProductCatalogImportResult:
     raw_bytes = await file.read()
     csv_text = raw_bytes.decode("utf-8-sig")
     return catalog_importer.import_csv_text(csv_text)
