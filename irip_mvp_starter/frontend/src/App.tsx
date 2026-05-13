@@ -43,6 +43,8 @@ import "./App.css";
 import ReportView from "./components/ReportView";
 import SentimentView from "./components/SentimentView";
 import MarketTab from "./components/MarketTab";
+import QualityView from "./components/QualityView";
+import OverviewView from "./components/OverviewView";
 
 // ============================================================
 // Zustand store — shared selection state
@@ -275,60 +277,6 @@ function buildEvidenceLevel(
     text: "Large review volume supports high-confidence pattern reading.",
     helper: confidence,
   };
-}
-
-function buildQualityLabel(value: number) {
-  if (!Number.isFinite(value) || value <= 0) return "Unknown";
-  if (value >= 0.85) return "Good";
-  if (value >= 0.7) return "Usable";
-  if (value >= 0.5) return "Needs Review";
-  return "Weak";
-}
-
-function buildTrustCards(
-  dashboard: VisualDashboard,
-  report: ExecutiveReport | null
-): KpiCard[] {
-  const evidence = buildEvidenceLevel(dashboard, report);
-  const reviewCount = getReviewCount(dashboard);
-  const qualityCard = dashboard.kpi_cards.find(
-    (item) => item.id === "quality_score"
-  );
-  const qualityValue = Number(qualityCard?.value || 0);
-  const qualityLabel = buildQualityLabel(qualityValue);
-
-  return [
-    {
-      id: "trust_confidence_level",
-      label: "Confidence Level",
-      value: evidence.label,
-      helper_text: evidence.text,
-      status: evidence.tone,
-    },
-    {
-      id: "trust_review_coverage",
-      label: "Review Coverage",
-      value: reviewCount,
-      helper_text:
-        reviewCount === 0
-          ? "No review sample available."
-          : reviewCount < 30
-            ? "Small sample. Read as early signal."
-            : reviewCount < 100
-              ? "Usable sample for directional analysis."
-              : "Stronger sample for product interpretation.",
-      status: reviewCount < 30 ? "warn" : "good",
-    },
-    {
-      id: "trust_data_quality",
-      label: "Data Quality",
-      value: qualityLabel,
-      helper_text:
-        "Readable review text improves aspect and sentiment extraction.",
-      status:
-        qualityValue >= 0.75 ? "good" : qualityValue >= 0.5 ? "warn" : "bad",
-    },
-  ];
 }
 
 function compressInsight(value: string) {
@@ -996,6 +944,11 @@ function MainVisualTile({
           dashboard={dashboard}
           report={report}
           onOpenEvidence={onOpenEvidence}
+          productId={productId}
+          competitorId={competitorId}
+          startDate={startDate}
+          endDate={endDate}
+          productName={productName}
         />
       ) : activeView === "summary" ? (
         <SummaryView
@@ -1030,46 +983,6 @@ function MainVisualTile({
           dashboard={dashboard}
         />
       )}
-    </div>
-  );
-}
-
-function OverviewView({
-  dashboard,
-  report,
-  onOpenEvidence,
-}: {
-  dashboard: VisualDashboard;
-  report: ExecutiveReport | null;
-  onOpenEvidence: () => void;
-}) {
-  const insightCards = buildUserInsightCards(dashboard, report);
-  const overviewKpis = buildOverviewKpis(dashboard);
-
-  return (
-    <div className="overview-view">
-      <div className="tile-section-header">
-        <div>
-          <p className="irip-eyebrow">Overview</p>
-          <h2>What matters right now</h2>
-        </div>
-        <button className="micro-button" type="button" onClick={onOpenEvidence}>
-          Evidence
-          <ChevronRight size={14} />
-        </button>
-      </div>
-
-      <div className="insight-card-grid">
-        {insightCards.map((card) => (
-          <article className={`insight-card ${card.tone}`} key={card.id}>
-            <span>{card.label}</span>
-            <strong>{card.title}</strong>
-            <p>{card.helper}</p>
-          </article>
-        ))}
-      </div>
-
-      <KpiCardGrid cards={overviewKpis} />
     </div>
   );
 }
@@ -1370,50 +1283,6 @@ function cleanBenchmarkSummaryText(value: string) {
     .replace(" ,", ",")
     .replace(" .", ".")
     .trim();
-}
-
-function QualityView({
-  dashboard,
-  report,
-}: {
-  dashboard: VisualDashboard;
-  report: ExecutiveReport | null;
-}) {
-  const evidence = buildEvidenceLevel(dashboard, report);
-  const trustCards = buildTrustCards(dashboard, report);
-
-  return (
-    <div className="quality-view">
-      <div className="tile-section-header">
-        <div>
-          <p className="irip-eyebrow">Trust Layer</p>
-          <h2>Can we trust this analysis?</h2>
-        </div>
-        <StatusPill status={evidence.label} />
-      </div>
-
-      <div className="quality-card-grid">
-        {trustCards.map((card) => (
-          <article className="quality-card" key={card.id}>
-            <span>{card.label}</span>
-            <strong>{formatValue(card.value)}</strong>
-            <p>{card.helper_text || "No note available."}</p>
-          </article>
-        ))}
-      </div>
-
-      <div className="quality-explainer">
-        <ShieldCheck size={18} />
-        <div>
-          <strong>How to use this analysis</strong>
-          <p>
-            {evidence.text} Keep claims evidence-linked, and avoid treating
-            small-sample patterns as final product truth.
-          </p>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 // @ts-ignore — retained for reference; superseded by src/components/ReportView.tsx

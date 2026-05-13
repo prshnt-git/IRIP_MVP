@@ -412,6 +412,11 @@ export type MarketIntelligence = {
   error_message: string | null;
 };
 
+export type DedupStats = {
+  total_seen: number;
+  scraped_today: number;
+};
+
 // ============================================================
 // Types — executive report
 // ============================================================
@@ -682,6 +687,10 @@ export async function fetchProductAspects(
 
 export async function fetchMarketIntelligence(): Promise<MarketIntelligence> {
   return getJson<MarketIntelligence>("/market/intelligence");
+}
+
+export async function fetchDedupStats(): Promise<DedupStats> {
+  return getJson<DedupStats>("/trust/dedup-stats");
 }
 
 // ============================================================
