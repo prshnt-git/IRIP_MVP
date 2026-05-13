@@ -1,9 +1,9 @@
 import { useMemo } from "react";
 import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, ChevronRight } from "lucide-react";
+import { AlertTriangle, ChevronRight, Sparkles } from "lucide-react";
 import type { VisualDashboard, ExecutiveReport, KpiCard } from "../api";
-import { fetchCompetitorBenchmark } from "../api";
+import { fetchCompetitorBenchmark, fetchIntelligenceBrief } from "../api";
 
 // ─── Local helpers (mirrored from App.tsx for standalone use) ─────────────────
 
@@ -73,18 +73,11 @@ function getReviewCount(dashboard: VisualDashboard): number {
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
-function buildSentimentRead(dashboard: VisualDashboard): {
-  title: string;
-  helper: string;
-  tone: Tone;
-} {
+function buildSentimentRead(dashboard: VisualDashboard): { title: string; helper: string; tone: Tone } {
   const sentimentData = dashboard.sentiment_distribution_chart?.data || [];
-  const positive =
-    sentimentData.find((item) => item.label.toLowerCase() === "positive")?.value || 0;
-  const negative =
-    sentimentData.find((item) => item.label.toLowerCase() === "negative")?.value || 0;
-  const neutral =
-    sentimentData.find((item) => item.label.toLowerCase() === "neutral")?.value || 0;
+  const positive = sentimentData.find((item) => item.label.toLowerCase() === "positive")?.value || 0;
+  const negative = sentimentData.find((item) => item.label.toLowerCase() === "negative")?.value || 0;
+  const neutral = sentimentData.find((item) => item.label.toLowerCase() === "neutral")?.value || 0;
 
   if (positive === 0 && negative === 0 && neutral === 0)
     return { title: "No sentiment pattern yet.", helper: "Import more reviews to read user mood.", tone: "neutral" };
@@ -100,11 +93,7 @@ function buildCompetitorContext(
   report: ExecutiveReport | null
 ): { title: string; helper: string; tone: Tone } {
   if (!dashboard.competitor_product_id)
-    return {
-      title: "Product-only view.",
-      helper: "Select a competitor only when benchmark comparison is needed.",
-      tone: "neutral",
-    };
+    return { title: "Product-only view.", helper: "Select a competitor only when benchmark comparison is needed.", tone: "neutral" };
   const takeaway = compressInsight(
     cleanThemeText(
       pickFirst(
@@ -118,20 +107,11 @@ function buildCompetitorContext(
 
 type InsightCard = { id: string; label: string; title: string; helper: string; tone: Tone };
 
-function buildUserInsightCards(
-  dashboard: VisualDashboard,
-  report: ExecutiveReport | null
-): InsightCard[] {
+function buildUserInsightCards(dashboard: VisualDashboard, report: ExecutiveReport | null): InsightCard[] {
   const reviewCount = getReviewCount(dashboard);
-  const strength = compressInsight(
-    cleanThemeText(pickFirst(report?.key_strengths, "No clear positive customer signal yet."))
-  );
-  const risk = compressInsight(
-    cleanThemeText(pickFirst(report?.key_risks, "No clear risk signal yet."))
-  );
-  const topAspect = dashboard.top_aspect_chart?.data?.[0]?.label
-    ? labelize(dashboard.top_aspect_chart.data[0].label)
-    : "No dominant aspect yet";
+  const strength = compressInsight(cleanThemeText(pickFirst(report?.key_strengths, "No clear positive customer signal yet.")));
+  const risk = compressInsight(cleanThemeText(pickFirst(report?.key_risks, "No clear risk signal yet.")));
+  const topAspect = dashboard.top_aspect_chart?.data?.[0]?.label ? labelize(dashboard.top_aspect_chart.data[0].label) : "No dominant aspect yet";
   const sentimentRead = buildSentimentRead(dashboard);
   const competitorContext = buildCompetitorContext(dashboard, report);
 
@@ -141,9 +121,7 @@ function buildUserInsightCards(
     {
       id: "evidence_base",
       label: "Evidence Base",
-      title: reviewCount < 30
-        ? `${reviewCount} usable review(s). Treat as early signal.`
-        : `${reviewCount} usable reviews. Stronger sample size.`,
+      title: reviewCount < 30 ? `${reviewCount} usable review(s). Treat as early signal.` : `${reviewCount} usable reviews. Stronger sample size.`,
       helper: `${topAspect} is currently the most discussed aspect.`,
       tone: reviewCount < 30 ? "warn" : "good",
     },
@@ -167,6 +145,15 @@ function buildOverviewKpis(dashboard: VisualDashboard): KpiCard[] {
   ];
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function firstTwoSentences(text: string): string {
+  if (!text) return "";
+  const sentences = text.match(/[^.!?]*[.!?]+/g) ?? [];
+  if (sentences.length >= 2) return sentences.slice(0, 2).join(" ").trim();
+  return text.length > 220 ? `${text.slice(0, 220).trim()}…` : text.trim();
+}
+
 // ─── Framer Motion variants ────────────────────────────────────────────────────
 
 const STAGGER_CONTAINER = {
@@ -175,12 +162,64 @@ const STAGGER_CONTAINER = {
 
 const STAGGER_ITEM = {
   initial: { opacity: 0, y: 12 },
-  animate: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.35, ease: "easeOut" as const },
-  },
+  animate: { opacity: 1, y: 0, transition: { duration: 0.35, ease: "easeOut" as const } },
 };
+
+// ─── AI Brief Card ────────────────────────────────────────────────────────────
+
+function AiBriefCard({
+  productId,
+  startDate,
+  endDate,
+  onGoToSummary,
+}: {
+  productId: string;
+  startDate: string;
+  endDate: string;
+  onGoToSummary: () => void;
+}) {
+  const { data: brief, isLoading } = useQuery({
+    queryKey: ["intelligenceBrief", productId, startDate, endDate],
+    queryFn: () =>
+      fetchIntelligenceBrief(productId, {
+        start_date: startDate || undefined,
+        end_date: endDate || undefined,
+      }),
+    staleTime: 10 * 60 * 1000,
+    retry: 1,
+    enabled: Boolean(productId),
+  });
+
+  const briefText = brief?.executive_summary ? firstTwoSentences(brief.executive_summary) : null;
+
+  if (!isLoading && !briefText) return null;
+
+  return (
+    <div className="ovv-brief-card">
+      <div className="ovv-brief-header">
+        <Sparkles size={14} className="ovv-brief-icon" />
+        <span className="ovv-brief-eyebrow">AI Brief</span>
+      </div>
+      {isLoading ? (
+        <div className="ovv-brief-skel">
+          <div className="ovv-brief-skel-line" />
+          <div className="ovv-brief-skel-line ovv-brief-skel-line--short" />
+        </div>
+      ) : (
+        <>
+          <p className="ovv-brief-text">{briefText}</p>
+          <button
+            className="ovv-brief-link"
+            type="button"
+            onClick={onGoToSummary}
+          >
+            Read full brief →
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
 
 // ─── Fairness Banner ──────────────────────────────────────────────────────────
 
@@ -198,8 +237,7 @@ function FairnessBanner({
       <AlertTriangle size={14} />
       <span>
         Note: <strong>{productName}</strong> has ~{ratio}× more reviews than{" "}
-        <strong>{competitorId}</strong> — comparison may favour statistical
-        significance.
+        <strong>{competitorId}</strong> — comparison may favour statistical significance.
       </span>
     </div>
   );
@@ -211,6 +249,7 @@ export default function OverviewView({
   dashboard,
   report,
   onOpenEvidence,
+  onGoToSummary,
   productId,
   competitorId,
   startDate,
@@ -220,6 +259,7 @@ export default function OverviewView({
   dashboard: VisualDashboard;
   report: ExecutiveReport | null;
   onOpenEvidence: () => void;
+  onGoToSummary: () => void;
   productId: string;
   competitorId: string;
   startDate: string;
@@ -230,11 +270,7 @@ export default function OverviewView({
   const overviewKpis = buildOverviewKpis(dashboard);
 
   const lastUpdated = useMemo(
-    () =>
-      new Date().toLocaleTimeString("en-IN", {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
+    () => new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }),
     []
   );
 
@@ -256,9 +292,7 @@ export default function OverviewView({
     benchmark.own_review_count > benchmark.competitor_review_count * 2;
 
   const fairnessRatio = benchmark
-    ? Math.round(
-        benchmark.own_review_count / Math.max(benchmark.competitor_review_count, 1)
-      )
+    ? Math.round(benchmark.own_review_count / Math.max(benchmark.competitor_review_count, 1))
     : 1;
 
   return (
@@ -275,6 +309,14 @@ export default function OverviewView({
           <ChevronRight size={14} />
         </button>
       </div>
+
+      {/* AI Brief card */}
+      <AiBriefCard
+        productId={productId}
+        startDate={startDate}
+        endDate={endDate}
+        onGoToSummary={onGoToSummary}
+      />
 
       {/* Fairness banner */}
       {showFairness && (
@@ -313,17 +355,11 @@ export default function OverviewView({
         animate="animate"
       >
         {overviewKpis.map((card) => (
-          <motion.article
-            className="kpi-card"
-            key={card.id}
-            variants={STAGGER_ITEM}
-          >
+          <motion.article className="kpi-card" key={card.id} variants={STAGGER_ITEM}>
             <div className="kpi-card-label-row">
               <span>{card.label}</span>
               {card.status ? (
-                <span
-                  className={`status-pill ${statusTone(card.status)} compact`}
-                >
+                <span className={`status-pill ${statusTone(card.status)} compact`}>
                   {labelize(card.status)}
                 </span>
               ) : null}

@@ -693,6 +693,11 @@ export async function fetchDedupStats(): Promise<DedupStats> {
   return getJson<DedupStats>("/trust/dedup-stats");
 }
 
+export type HealthResponse = { status: string };
+export async function fetchHealth(): Promise<HealthResponse> {
+  return getJson<HealthResponse>("/health");
+}
+
 // ============================================================
 // API — visual dashboard + executive report
 // ============================================================

@@ -9,6 +9,7 @@ import {
   FileText,
   Filter,
   Gauge,
+  Info,
   Layers3,
   Loader2,
   Newspaper,
@@ -20,7 +21,7 @@ import {
   X,
 } from "lucide-react";
 import { create } from "zustand";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import {
   type ProductItem,
   type VisualDashboard,
@@ -37,6 +38,8 @@ import {
   fetchProducts,
   fetchVisualDashboard,
   fetchExecutiveReport,
+  fetchCompetitorBenchmark,
+  fetchHealth,
   importReviewsFromCsvUrl,
 } from "./api";
 import "./App.css";
@@ -45,6 +48,7 @@ import SentimentView from "./components/SentimentView";
 import MarketTab from "./components/MarketTab";
 import QualityView from "./components/QualityView";
 import OverviewView from "./components/OverviewView";
+import ErrorBoundary, { EmptyReviewsCard } from "./components/ErrorBoundary";
 
 // ============================================================
 // Zustand store — shared selection state
@@ -72,7 +76,7 @@ const useWorkspaceStore = create<WorkspaceState>((set) => ({
 }));
 
 // ============================================================
-// TanStack Query client (provider added at root of App return)
+// TanStack Query client
 // ============================================================
 
 const queryClient = new QueryClient();
@@ -134,7 +138,7 @@ const views: { key: ViewKey; label: string; icon: typeof BarChart3 }[] = [
 ];
 
 // ============================================================
-// Module-level workspace fetcher (pure function, no closure deps)
+// Module-level workspace fetcher
 // ============================================================
 
 async function fetchWorkspace(
@@ -177,19 +181,10 @@ function labelize(value?: string | null) {
 
 function statusTone(status?: string | null): Exclude<Tone, "primary"> {
   const n = (status || "").toLowerCase();
-  if (n.includes("ready") || n === "active" || n === "pass") return "good";
-  if (
-    n.includes("warn") ||
-    n.includes("directional") ||
-    n.includes("low") ||
-    n.includes("limitation")
-  )
+  if (n.includes("ready") || n === "active" || n === "pass" || n === "good") return "good";
+  if (n.includes("warn") || n.includes("directional") || n.includes("low") || n.includes("limitation"))
     return "warn";
-  if (
-    n.includes("fail") ||
-    n.includes("negative") ||
-    n.includes("error")
-  )
+  if (n.includes("fail") || n.includes("negative") || n.includes("error") || n === "bad")
     return "bad";
   return "neutral";
 }
@@ -214,10 +209,7 @@ function isDebugLikeBullet(text: string) {
 function cleanThemeText(text: string) {
   return text
     .replace(/:\s*Camera delight theme\.?/gi, " is showing early delight.")
-    .replace(
-      /:\s*Battery complaint theme\.?/gi,
-      " is the main complaint area to validate."
-    )
+    .replace(/:\s*Battery complaint theme\.?/gi, " is the main complaint area to validate.")
     .replace(/\bphone_a\b/gi, "the selected product")
     .replace(/\bphone_b\b/gi, "the competitor")
     .trim();
@@ -239,64 +231,27 @@ function buildEvidenceLevel(
     "Confidence depends on review volume, data quality, and evidence coverage.";
 
   if (reviewCount === 0)
-    return {
-      label: "No Evidence",
-      tone: "bad" as Tone,
-      text: "No usable review evidence is available yet.",
-      helper:
-        "Import product reviews before interpreting customer sentiment or product risks.",
-    };
-
+    return { label: "No Evidence", tone: "bad" as Tone, text: "No usable review evidence is available yet.", helper: "Import product reviews before interpreting customer sentiment or product risks." };
   if (reviewCount < 30)
-    return {
-      label: "Early Signal",
-      tone: "warn" as Tone,
-      text: "Useful for early pattern discovery, not final product judgment.",
-      helper: confidence,
-    };
-
+    return { label: "Early Signal", tone: "warn" as Tone, text: "Useful for early pattern discovery, not final product judgment.", helper: confidence };
   if (reviewCount < 100)
-    return {
-      label: "Directional",
-      tone: "warn" as Tone,
-      text: "Enough evidence for directional reading, but still validate major claims.",
-      helper: confidence,
-    };
-
+    return { label: "Directional", tone: "warn" as Tone, text: "Enough evidence for directional reading, but still validate major claims.", helper: confidence };
   if (reviewCount < 500)
-    return {
-      label: "Stronger Signal",
-      tone: "good" as Tone,
-      text: "Review volume is strong enough for more meaningful product interpretation.",
-      helper: confidence,
-    };
-
-  return {
-    label: "High Confidence",
-    tone: "good" as Tone,
-    text: "Large review volume supports high-confidence pattern reading.",
-    helper: confidence,
-  };
+    return { label: "Stronger Signal", tone: "good" as Tone, text: "Review volume is strong enough for more meaningful product interpretation.", helper: confidence };
+  return { label: "High Confidence", tone: "good" as Tone, text: "Large review volume supports high-confidence pattern reading.", helper: confidence };
 }
 
 function compressInsight(value: string) {
   const cleaned = value
     .replace("The selected product", "Selected product")
     .replace("the selected product", "selected product")
-    .replace(
-      "Treat as directional because evidence volume/confidence is still low.",
-      ""
-    )
+    .replace("Treat as directional because evidence volume/confidence is still low.", "")
     .replace("Evidence strength:", "")
     .replace(/\s+/g, " ")
     .trim();
-
   if (cleaned.length <= 96) return ensureSentence(cleaned);
-
   const firstSentence = cleaned.split(".")[0]?.trim();
-  if (firstSentence && firstSentence.length <= 96)
-    return ensureSentence(firstSentence);
-
+  if (firstSentence && firstSentence.length <= 96) return ensureSentence(firstSentence);
   return ensureSentence(`${cleaned.slice(0, 92).trim()}…`);
 }
 
@@ -311,42 +266,17 @@ function buildSentimentRead(dashboard: VisualDashboard): {
   tone: Tone;
 } {
   const sentimentData = dashboard.sentiment_distribution_chart?.data || [];
-  const positive =
-    sentimentData.find((item) => item.label.toLowerCase() === "positive")
-      ?.value || 0;
-  const negative =
-    sentimentData.find((item) => item.label.toLowerCase() === "negative")
-      ?.value || 0;
-  const neutral =
-    sentimentData.find((item) => item.label.toLowerCase() === "neutral")
-      ?.value || 0;
+  const positive = sentimentData.find((item) => item.label.toLowerCase() === "positive")?.value || 0;
+  const negative = sentimentData.find((item) => item.label.toLowerCase() === "negative")?.value || 0;
+  const neutral = sentimentData.find((item) => item.label.toLowerCase() === "neutral")?.value || 0;
 
   if (positive === 0 && negative === 0 && neutral === 0)
-    return {
-      title: "No sentiment pattern yet.",
-      helper: "Import more reviews to read user mood.",
-      tone: "neutral",
-    };
-
+    return { title: "No sentiment pattern yet.", helper: "Import more reviews to read user mood.", tone: "neutral" };
   if (positive > negative * 1.25)
-    return {
-      title: "Positive sentiment is leading.",
-      helper: `${positive} positive vs ${negative} negative aspect signal(s).`,
-      tone: "good",
-    };
-
+    return { title: "Positive sentiment is leading.", helper: `${positive} positive vs ${negative} negative aspect signal(s).`, tone: "good" };
   if (negative > positive * 1.25)
-    return {
-      title: "Negative sentiment is leading.",
-      helper: `${negative} negative vs ${positive} positive aspect signal(s).`,
-      tone: "bad",
-    };
-
-  return {
-    title: "Sentiment is mixed.",
-    helper: `${positive} positive and ${negative} negative aspect signal(s).`,
-    tone: "warn",
-  };
+    return { title: "Negative sentiment is leading.", helper: `${negative} negative vs ${positive} positive aspect signal(s).`, tone: "bad" };
+  return { title: "Sentiment is mixed.", helper: `${positive} positive and ${negative} negative aspect signal(s).`, tone: "warn" };
 }
 
 function buildCompetitorContext(
@@ -354,28 +284,16 @@ function buildCompetitorContext(
   report: ExecutiveReport | null
 ): { title: string; helper: string; tone: Tone } {
   if (!dashboard.competitor_product_id)
-    return {
-      title: "Product-only view.",
-      helper:
-        "Select a competitor only when benchmark comparison is needed.",
-      tone: "neutral",
-    };
-
+    return { title: "Product-only view.", helper: "Select a competitor only when benchmark comparison is needed.", tone: "neutral" };
   const takeaway = compressInsight(
     cleanThemeText(
       pickFirst(
         report?.competitor_takeaways,
-        dashboard.competitor_gap_chart?.data?.[0]?.interpretation ||
-          "Benchmark evidence is available."
+        dashboard.competitor_gap_chart?.data?.[0]?.interpretation || "Benchmark evidence is available."
       )
     )
   );
-
-  return {
-    title: takeaway,
-    helper: "Directional competitor context from aspect-level gaps.",
-    tone: "primary",
-  };
+  return { title: takeaway, helper: "Directional competitor context from aspect-level gaps.", tone: "primary" };
 }
 
 function buildUserInsightCards(
@@ -383,16 +301,8 @@ function buildUserInsightCards(
   report: ExecutiveReport | null
 ): InsightCard[] {
   const reviewCount = getReviewCount(dashboard);
-  const strength = compressInsight(
-    cleanThemeText(
-      pickFirst(report?.key_strengths, "No clear positive customer signal yet.")
-    )
-  );
-  const risk = compressInsight(
-    cleanThemeText(
-      pickFirst(report?.key_risks, "No clear risk signal yet.")
-    )
-  );
+  const strength = compressInsight(cleanThemeText(pickFirst(report?.key_strengths, "No clear positive customer signal yet.")));
+  const risk = compressInsight(cleanThemeText(pickFirst(report?.key_risks, "No clear risk signal yet.")));
   const topAspect = dashboard.top_aspect_chart?.data?.[0]?.label
     ? labelize(dashboard.top_aspect_chart.data[0].label)
     : "No dominant aspect yet";
@@ -400,92 +310,32 @@ function buildUserInsightCards(
   const competitorContext = buildCompetitorContext(dashboard, report);
 
   return [
-    {
-      id: "customer_like",
-      label: "Customer Like",
-      title: strength,
-      helper: "Strongest positive signal found in review evidence.",
-      tone: "good",
-    },
-    {
-      id: "customer_complaint",
-      label: "Customer Complaint",
-      title: risk,
-      helper: "Most important negative signal to understand.",
-      tone: "bad",
-    },
+    { id: "customer_like", label: "Customer Like", title: strength, helper: "Strongest positive signal found in review evidence.", tone: "good" },
+    { id: "customer_complaint", label: "Customer Complaint", title: risk, helper: "Most important negative signal to understand.", tone: "bad" },
     {
       id: "evidence_base",
       label: "Evidence Base",
-      title:
-        reviewCount < 30
-          ? `${reviewCount} usable review(s). Treat as early signal.`
-          : `${reviewCount} usable reviews. Stronger sample size.`,
+      title: reviewCount < 30 ? `${reviewCount} usable review(s). Treat as early signal.` : `${reviewCount} usable reviews. Stronger sample size.`,
       helper: `${topAspect} is currently the most discussed aspect.`,
       tone: reviewCount < 30 ? "warn" : "good",
     },
-    {
-      id: "sentiment_read",
-      label: "Sentiment Read",
-      title: sentimentRead.title,
-      helper: sentimentRead.helper,
-      tone: sentimentRead.tone,
-    },
-    {
-      id: "competitor_context",
-      label: "Competitor Context",
-      title: competitorContext.title,
-      helper: competitorContext.helper,
-      tone: competitorContext.tone,
-    },
+    { id: "sentiment_read", label: "Sentiment Read", title: sentimentRead.title, helper: sentimentRead.helper, tone: sentimentRead.tone },
+    { id: "competitor_context", label: "Competitor Context", title: competitorContext.title, helper: competitorContext.helper, tone: competitorContext.tone },
   ];
 }
 
 function buildOverviewKpis(dashboard: VisualDashboard): KpiCard[] {
   const reviewCount = getReviewCount(dashboard);
-  const rating = dashboard.kpi_cards.find(
-    (item) => item.id === "average_rating"
-  );
+  const rating = dashboard.kpi_cards.find((item) => item.id === "average_rating");
   const sentimentData = dashboard.sentiment_distribution_chart?.data || [];
-  const positive =
-    sentimentData.find((item) => item.label.toLowerCase() === "positive")
-      ?.value || 0;
-  const negative =
-    sentimentData.find((item) => item.label.toLowerCase() === "negative")
-      ?.value || 0;
+  const positive = sentimentData.find((item) => item.label.toLowerCase() === "positive")?.value || 0;
+  const negative = sentimentData.find((item) => item.label.toLowerCase() === "negative")?.value || 0;
 
   return [
-    {
-      id: "overview_review_sample",
-      label: "Review Sample",
-      value: reviewCount,
-      helper_text:
-        reviewCount < 30
-          ? "Small sample. Read as early signal."
-          : "Usable sample for directional reads.",
-      status: reviewCount < 30 ? "low_volume" : "usable",
-    },
-    {
-      id: "overview_avg_rating",
-      label: "Avg Rating",
-      value: rating?.value ?? "—",
-      helper_text: "Marketplace/user rating average.",
-      status: null,
-    },
-    {
-      id: "overview_positive_signals",
-      label: "Positive Signals",
-      value: positive,
-      helper_text: "Positive aspect-level mentions found.",
-      status: positive > negative ? "good" : null,
-    },
-    {
-      id: "overview_negative_signals",
-      label: "Negative Signals",
-      value: negative,
-      helper_text: "Negative aspect-level mentions found.",
-      status: negative > positive ? "warn" : null,
-    },
+    { id: "overview_review_sample", label: "Review Sample", value: reviewCount, helper_text: reviewCount < 30 ? "Small sample. Read as early signal." : "Usable sample for directional reads.", status: reviewCount < 30 ? "low_volume" : "usable" },
+    { id: "overview_avg_rating", label: "Avg Rating", value: rating?.value ?? "—", helper_text: "Marketplace/user rating average.", status: null },
+    { id: "overview_positive_signals", label: "Positive Signals", value: positive, helper_text: "Positive aspect-level mentions found.", status: positive > negative ? "good" : null },
+    { id: "overview_negative_signals", label: "Negative Signals", value: negative, helper_text: "Negative aspect-level mentions found.", status: negative > positive ? "warn" : null },
   ];
 }
 
@@ -509,21 +359,13 @@ function getCleanReportBullets(report: ExecutiveReport | null) {
 export default function App() {
   const hasBootstrappedRef = useRef(false);
 
-  // Zustand — shared selection state
   const selectedProductId = useWorkspaceStore((s) => s.selectedProductId);
-  const setSelectedProductId = useWorkspaceStore(
-    (s) => s.setSelectedProductId
-  );
-  const selectedCompetitorId = useWorkspaceStore(
-    (s) => s.selectedCompetitorId
-  );
-  const setSelectedCompetitorId = useWorkspaceStore(
-    (s) => s.setSelectedCompetitorId
-  );
+  const setSelectedProductId = useWorkspaceStore((s) => s.setSelectedProductId);
+  const selectedCompetitorId = useWorkspaceStore((s) => s.selectedCompetitorId);
+  const setSelectedCompetitorId = useWorkspaceStore((s) => s.setSelectedCompetitorId);
   const timePeriod = useWorkspaceStore((s) => s.timePeriod);
   const setTimePeriod = useWorkspaceStore((s) => s.setTimePeriod);
 
-  // Local state
   const [products, setProducts] = useState<ProductItem[]>([]);
   const [activeView, setActiveView] = useState<ViewKey>("overview");
   const [dashboard, setDashboard] = useState<VisualDashboard | null>(null);
@@ -539,6 +381,34 @@ export default function App() {
   const [evidenceOpen, setEvidenceOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+
+  // ── Render cold-start handler ──────────────────────────────
+  const [warmingUp, setWarmingUp] = useState(false);
+
+  useEffect(() => {
+    let showTimer: ReturnType<typeof setTimeout>;
+    let cancelled = false;
+    showTimer = setTimeout(() => { if (!cancelled) setWarmingUp(true); }, 3000);
+    fetchHealth()
+      .catch(() => {})
+      .finally(() => { clearTimeout(showTimer); if (!cancelled) setWarmingUp(false); });
+    return () => { cancelled = true; clearTimeout(showTimer); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Dynamic page title ─────────────────────────────────────
+  useEffect(() => {
+    const pName = products.find((p) => p.product_id === selectedProductId)?.product_name;
+    const cName = selectedCompetitorId
+      ? products.find((p) => p.product_id === selectedCompetitorId)?.product_name
+      : null;
+    if (pName && cName) {
+      document.title = `IRIP — ${pName} vs ${cName}`;
+    } else if (pName) {
+      document.title = `IRIP — ${pName}`;
+    } else {
+      document.title = "IRIP — Review Intelligence Platform";
+    }
+  }, [selectedProductId, selectedCompetitorId, products]);
 
   useEffect(() => {
     if (hasBootstrappedRef.current) return;
@@ -556,15 +426,9 @@ export default function App() {
       const items = await fetchProducts();
       setProducts(items);
 
-      // Auto-select first own-brand product (itel / Infinix / Tecno)
       const defaultProduct =
-        items.find(
-          (item) => item.is_own_brand === true || item.own_brand === true
-        ) ||
-        items.find((item) => {
-          const brand = (item.brand || "").toLowerCase();
-          return ["tecno", "infinix", "itel"].includes(brand);
-        }) ||
+        items.find((item) => item.is_own_brand === true || item.own_brand === true) ||
+        items.find((item) => { const brand = (item.brand || "").toLowerCase(); return ["tecno", "infinix", "itel"].includes(brand); }) ||
         items[0];
 
       const nextProductId = defaultProduct?.product_id ?? "";
@@ -574,19 +438,12 @@ export default function App() {
       setSelectedCompetitorId(nextCompetitorId);
 
       if (nextProductId) {
-        const [dashboardResult, reportResult] = await fetchWorkspace(
-          nextProductId,
-          nextCompetitorId,
-          "",
-          ""
-        );
+        const [dashboardResult, reportResult] = await fetchWorkspace(nextProductId, nextCompetitorId, "", "");
         setDashboard(dashboardResult);
         setReport(reportResult);
       }
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Unable to bootstrap workspace."
-      );
+      setError(err instanceof Error ? err.message : "Unable to bootstrap workspace.");
     } finally {
       setProductsLoading(false);
       setLoading(false);
@@ -598,20 +455,10 @@ export default function App() {
     try {
       const items = await fetchProducts();
       setProducts(items);
-
-      const productStillExists = items.some(
-        (item) => item.product_id === selectedProductId
-      );
-      const competitorStillExists = items.some(
-        (item) => item.product_id === selectedCompetitorId
-      );
-
-      if (!productStillExists && items[0]) {
-        setSelectedProductId(items[0].product_id);
-      }
-      if (!competitorStillExists || selectedCompetitorId === selectedProductId) {
-        setSelectedCompetitorId("");
-      }
+      const productStillExists = items.some((item) => item.product_id === selectedProductId);
+      const competitorStillExists = items.some((item) => item.product_id === selectedCompetitorId);
+      if (!productStillExists && items[0]) setSelectedProductId(items[0].product_id);
+      if (!competitorStillExists || selectedCompetitorId === selectedProductId) setSelectedCompetitorId("");
     } catch (err) {
       console.warn("Product load failed", err);
     } finally {
@@ -635,9 +482,7 @@ export default function App() {
       setDashboard(dashboardResult);
       setReport(reportResult);
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Unable to load workspace."
-      );
+      setError(err instanceof Error ? err.message : "Unable to load workspace.");
     } finally {
       setLoading(false);
     }
@@ -665,9 +510,7 @@ export default function App() {
 
   function handleProductChange(productId: string) {
     setSelectedProductId(productId);
-    if (selectedCompetitorId === productId) {
-      setSelectedCompetitorId("");
-    }
+    if (selectedCompetitorId === productId) setSelectedCompetitorId("");
   }
 
   function handleCompetitorChange(competitorId: string) {
@@ -679,14 +522,8 @@ export default function App() {
   }
 
   function downloadReport() {
-    const payload = {
-      dashboard,
-      report,
-      generated_at: new Date().toISOString(),
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], {
-      type: "application/json",
-    });
+    const payload = { dashboard, report, generated_at: new Date().toISOString() };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
@@ -694,6 +531,9 @@ export default function App() {
     anchor.click();
     URL.revokeObjectURL(url);
   }
+
+  const competitorName =
+    products.find((p) => p.product_id === selectedCompetitorId)?.product_name ?? selectedCompetitorId;
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -708,6 +548,8 @@ export default function App() {
           loading={loading}
         />
 
+        <WarmingBanner visible={warmingUp} />
+
         <div className="irip-body-grid">
           <main className="irip-left-workspace">
             <section className="irip-workspace-header compact">
@@ -718,10 +560,7 @@ export default function App() {
               {loading && !dashboard ? (
                 <LoadingTile />
               ) : error && !dashboard ? (
-                <ErrorTile
-                  message={error}
-                  onRetry={() => void loadWorkspace()}
-                />
+                <ErrorTile message={error} onRetry={() => void loadWorkspace()} />
               ) : dashboard ? (
                 <MainVisualTile
                   activeView={activeView}
@@ -729,6 +568,7 @@ export default function App() {
                   report={report}
                   onOpenEvidence={() => setEvidenceOpen(true)}
                   onOpenReport={() => setReportOpen(true)}
+                  onViewChange={setActiveView}
                   productId={selectedProductId}
                   competitorId={selectedCompetitorId}
                   startDate={timePeriod.startDate}
@@ -737,6 +577,7 @@ export default function App() {
                     products.find((p) => p.product_id === selectedProductId)
                       ?.product_name ?? selectedProductId
                   }
+                  competitorName={competitorName}
                 />
               ) : (
                 <EmptyWorkspace onRetry={() => void loadWorkspace()} />
@@ -775,9 +616,7 @@ export default function App() {
 
         <EvidenceDrawer
           open={evidenceOpen}
-          evidenceLinks={
-            dashboard?.evidence_links || report?.evidence_links || []
-          }
+          evidenceLinks={dashboard?.evidence_links || report?.evidence_links || []}
           onClose={() => setEvidenceOpen(false)}
         />
 
@@ -800,7 +639,23 @@ export default function App() {
 }
 
 // ============================================================
-// Sub-components (layout unchanged)
+// Warming banner
+// ============================================================
+
+function WarmingBanner({ visible }: { visible: boolean }) {
+  if (!visible) return null;
+  return (
+    <div className="warming-banner">
+      <Loader2 size={13} className="spin" />
+      <span>
+        Backend warming up… this takes about 30 seconds on first load.
+      </span>
+    </div>
+  );
+}
+
+// ============================================================
+// Sub-components
 // ============================================================
 
 function TopImportBar({
@@ -845,24 +700,14 @@ function TopImportBar({
           />
         </div>
 
-        <button
-          className="top-action-button primary"
-          type="button"
-          onClick={onPreviewImport}
-        >
+        <button className="top-action-button primary" type="button" onClick={onPreviewImport}>
           <UploadCloud size={15} />
           <span>
-            {importStatus === "previewing"
-              ? "Opening Workspace"
-              : "Open Workspace"}
+            {importStatus === "previewing" ? "Opening Workspace" : "Open Workspace"}
           </span>
         </button>
 
-        <button
-          className="top-action-button ghost"
-          type="button"
-          onClick={onDownloadReport}
-        >
+        <button className="top-action-button ghost" type="button" onClick={onDownloadReport}>
           <Download size={15} />
           <span>Download Report</span>
         </button>
@@ -871,9 +716,7 @@ function TopImportBar({
       <div className="top-status-section">
         <span className={`status-dot ${statusTone(readinessStatus)}`} />
         <span>
-          {loading
-            ? "Refreshing"
-            : labelize(readinessStatus || "ready with limitations")}
+          {loading ? "Refreshing" : labelize(readinessStatus || "ready with limitations")}
         </span>
       </div>
     </header>
@@ -914,23 +757,32 @@ function MainVisualTile({
   report,
   onOpenEvidence,
   onOpenReport,
+  onViewChange,
   productId,
   competitorId,
   startDate,
   endDate,
   productName,
+  competitorName,
 }: {
   activeView: ViewKey;
   dashboard: VisualDashboard;
   report: ExecutiveReport | null;
   onOpenEvidence: () => void;
   onOpenReport: () => void;
+  onViewChange: (view: ViewKey) => void;
   productId: string;
   competitorId: string;
   startDate: string;
   endDate: string;
   productName: string;
+  competitorName: string;
 }) {
+  const reviewCount = Number(
+    dashboard.kpi_cards.find((c) => c.id === "review_count")?.value || 0
+  );
+  const needsReviews = reviewCount === 0;
+
   return (
     <div
       className={
@@ -940,48 +792,81 @@ function MainVisualTile({
       }
     >
       {activeView === "overview" ? (
-        <OverviewView
-          dashboard={dashboard}
-          report={report}
-          onOpenEvidence={onOpenEvidence}
-          productId={productId}
-          competitorId={competitorId}
-          startDate={startDate}
-          endDate={endDate}
-          productName={productName}
-        />
+        <ErrorBoundary label="Overview">
+          {needsReviews ? (
+            <EmptyReviewsCard />
+          ) : (
+            <OverviewView
+              dashboard={dashboard}
+              report={report}
+              onOpenEvidence={onOpenEvidence}
+              onGoToSummary={() => onViewChange("summary")}
+              productId={productId}
+              competitorId={competitorId}
+              startDate={startDate}
+              endDate={endDate}
+              productName={productName}
+            />
+          )}
+        </ErrorBoundary>
       ) : activeView === "summary" ? (
-        <SummaryView
-          dashboard={dashboard}
-          report={report}
-          onOpenEvidence={onOpenEvidence}
-          onOpenReport={onOpenReport}
-        />
+        <ErrorBoundary label="Insights">
+          {needsReviews ? (
+            <EmptyReviewsCard />
+          ) : (
+            <SummaryView
+              dashboard={dashboard}
+              report={report}
+              onOpenEvidence={onOpenEvidence}
+              onOpenReport={onOpenReport}
+            />
+          )}
+        </ErrorBoundary>
       ) : activeView === "sentiment" ? (
-        <SentimentView
-          productId={productId}
-          startDate={startDate}
-          endDate={endDate}
-          dashboard={dashboard}
-        />
+        <ErrorBoundary label="Sentiment">
+          {needsReviews ? (
+            <EmptyReviewsCard />
+          ) : (
+            <SentimentView
+              productId={productId}
+              startDate={startDate}
+              endDate={endDate}
+              dashboard={dashboard}
+            />
+          )}
+        </ErrorBoundary>
       ) : activeView === "competitor" ? (
-        <CompetitorView
-          dashboard={dashboard}
-          onOpenEvidence={onOpenEvidence}
-        />
+        <ErrorBoundary label="Benchmark">
+          <CompetitorView
+            dashboard={dashboard}
+            onOpenEvidence={onOpenEvidence}
+            productId={productId}
+            competitorId={competitorId}
+            startDate={startDate}
+            endDate={endDate}
+            productName={productName}
+            competitorName={competitorName}
+          />
+        </ErrorBoundary>
       ) : activeView === "news" ? (
-        <MarketTab />
+        <ErrorBoundary label="Market">
+          <MarketTab />
+        </ErrorBoundary>
       ) : activeView === "quality" ? (
-        <QualityView dashboard={dashboard} report={report} />
+        <ErrorBoundary label="Trust">
+          <QualityView dashboard={dashboard} report={report} />
+        </ErrorBoundary>
       ) : (
-        <ReportView
-          productId={productId}
-          competitorId={competitorId}
-          startDate={startDate}
-          endDate={endDate}
-          productName={productName}
-          dashboard={dashboard}
-        />
+        <ErrorBoundary label="Report">
+          <ReportView
+            productId={productId}
+            competitorId={competitorId}
+            startDate={startDate}
+            endDate={endDate}
+            productName={productName}
+            dashboard={dashboard}
+          />
+        </ErrorBoundary>
       )}
     </div>
   );
@@ -999,12 +884,8 @@ function SummaryView({
   onOpenReport: () => void;
 }) {
   const insightCards = buildUserInsightCards(dashboard, report);
-  const topStrength =
-    insightCards.find((item) => item.id === "customer_like")?.title ||
-    "No clear strength yet.";
-  const topRisk =
-    insightCards.find((item) => item.id === "customer_complaint")?.title ||
-    "No clear risk yet.";
+  const topStrength = insightCards.find((item) => item.id === "customer_like")?.title || "No clear strength yet.";
+  const topRisk = insightCards.find((item) => item.id === "customer_complaint")?.title || "No clear risk yet.";
   const confidence = buildEvidenceLevel(dashboard, report);
   const nextActions = dashboard.recommended_actions?.length
     ? dashboard.recommended_actions.map(cleanThemeText)
@@ -1018,18 +899,10 @@ function SummaryView({
           <h2>Why this matters</h2>
         </div>
         <div className="button-pair">
-          <button
-            className="micro-button"
-            type="button"
-            onClick={onOpenEvidence}
-          >
+          <button className="micro-button" type="button" onClick={onOpenEvidence}>
             Evidence
           </button>
-          <button
-            className="micro-button primary"
-            type="button"
-            onClick={onOpenReport}
-          >
+          <button className="micro-button primary" type="button" onClick={onOpenReport}>
             Full Report
           </button>
         </div>
@@ -1041,12 +914,10 @@ function SummaryView({
           <p>{confidence.text}</p>
           <small>{confidence.helper}</small>
         </section>
-
         <section className="summary-panel strength">
           <span>Strength</span>
           <p>{topStrength}</p>
         </section>
-
         <section className="summary-panel risk">
           <span>Risk</span>
           <p>{topRisk}</p>
@@ -1058,12 +929,8 @@ function SummaryView({
           <span>Recommended actions</span>
           <small>{nextActions.length} action(s)</small>
         </div>
-
         {nextActions.slice(0, 6).map((action, index) => (
-          <article
-            className="summary-action-row"
-            key={`${action}-${index}`}
-          >
+          <article className="summary-action-row" key={`${action}-${index}`}>
             <strong>{String(index + 1).padStart(2, "0")}</strong>
             <p>{action}</p>
           </article>
@@ -1076,16 +943,44 @@ function SummaryView({
 function CompetitorView({
   dashboard,
   onOpenEvidence,
+  productId,
+  competitorId,
+  startDate,
+  endDate,
+  productName,
+  competitorName,
 }: {
   dashboard: VisualDashboard;
   onOpenEvidence: () => void;
+  productId: string;
+  competitorId: string;
+  startDate: string;
+  endDate: string;
+  productName: string;
+  competitorName: string;
 }) {
   const hasCompetitor = Boolean(dashboard.competitor_product_id);
   const gapRows = dashboard.competitor_gap_chart?.data || [];
   const specTable = dashboard.benchmark_spec_table;
   const specRows = specTable?.rows || [];
-  const summary =
-    dashboard.benchmark_summary || buildLocalBenchmarkSummary(gapRows);
+  const summary = dashboard.benchmark_summary || buildLocalBenchmarkSummary(gapRows);
+
+  const { data: benchmarkData } = useQuery({
+    queryKey: ["benchmark", productId, competitorId, startDate, endDate],
+    queryFn: () =>
+      fetchCompetitorBenchmark(productId, competitorId, {
+        start_date: startDate || undefined,
+        end_date: endDate || undefined,
+      }),
+    enabled: hasCompetitor && Boolean(productId && competitorId),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const ownCount = benchmarkData?.own_review_count ?? getReviewCount(dashboard);
+  const compCount = benchmarkData?.competitor_review_count ?? 0;
+  const tooltipText = hasCompetitor
+    ? `Scores based on ${ownCount} review${ownCount !== 1 ? "s" : ""} for ${productName} and ${compCount} review${compCount !== 1 ? "s" : ""} for ${competitorName}. Higher score = more positive sentiment from users.`
+    : "";
 
   if (!hasCompetitor) {
     return (
@@ -1098,10 +993,7 @@ function CompetitorView({
         </div>
         <section className="benchmark-final-empty">
           <h3>No competitor selected</h3>
-          <p>
-            Select a competitor from the control rail to unlock benchmark
-            comparison.
-          </p>
+          <p>Select a competitor from the control rail to unlock benchmark comparison.</p>
         </section>
       </div>
     );
@@ -1114,11 +1006,7 @@ function CompetitorView({
           <p className="irip-eyebrow">Benchmark</p>
           <h2>Where the selected product leads or lags</h2>
         </div>
-        <button
-          className="micro-button"
-          type="button"
-          onClick={onOpenEvidence}
-        >
+        <button className="micro-button" type="button" onClick={onOpenEvidence}>
           Evidence
           <ChevronRight size={14} />
         </button>
@@ -1127,11 +1015,20 @@ function CompetitorView({
       <section className="benchmark-final-chart-panel">
         <div className="benchmark-final-section-head">
           <div>
-            <span>Review Gap Chart</span>
-            <h3>
-              Positive means selected product leads. Negative means competitor
-              leads.
-            </h3>
+            <span className="benchmark-chart-title-row">
+              Review Gap Chart
+              {tooltipText && (
+                <button
+                  className="info-tooltip-btn"
+                  type="button"
+                  title={tooltipText}
+                  aria-label="Chart information"
+                >
+                  <Info size={12} />
+                </button>
+              )}
+            </span>
+            <h3>Positive means selected product leads. Negative means competitor leads.</h3>
           </div>
         </div>
         <EChartCard chart={dashboard.competitor_gap_chart} variant="gap" compact />
@@ -1167,10 +1064,7 @@ function CompetitorView({
           ) : (
             <section className="benchmark-final-empty compact">
               <h3>No spec table yet</h3>
-              <p>
-                Generate the comparison again, or add product catalog/spec data
-                for verified comparison.
-              </p>
+              <p>Generate the comparison again, or add product catalog/spec data for verified comparison.</p>
             </section>
           )}
         </div>
@@ -1191,9 +1085,7 @@ function CompetitorView({
         <div className="benchmark-final-summary-grid">
           <article>
             <span>Selected Product</span>
-            <p>
-              {cleanBenchmarkSummaryText(summary.selected_product_summary)}
-            </p>
+            <p>{cleanBenchmarkSummaryText(summary.selected_product_summary)}</p>
           </article>
           <article>
             <span>Competitor</span>
@@ -1222,29 +1114,15 @@ function buildBenchmarkSignal(item: CompetitorGapDatum) {
   return { label: "Competitor Leads", tone: "bad" };
 }
 
-function buildLocalBenchmarkSummary(
-  rows: CompetitorGapDatum[]
-): BenchmarkSummary {
+function buildLocalBenchmarkSummary(rows: CompetitorGapDatum[]): BenchmarkSummary {
   const selected = rows
-    .filter(
-      (item) =>
-        item.gap > 0 &&
-        !item.confidence_label.toLowerCase().includes("insufficient")
-    )
+    .filter((item) => item.gap > 0 && !item.confidence_label.toLowerCase().includes("insufficient"))
     .map((item) => labelize(item.aspect));
-
   const competitor = rows
-    .filter(
-      (item) =>
-        item.gap < 0 &&
-        !item.confidence_label.toLowerCase().includes("insufficient")
-    )
+    .filter((item) => item.gap < 0 && !item.confidence_label.toLowerCase().includes("insufficient"))
     .map((item) => labelize(item.aspect));
-
   const gaps = rows
-    .filter((item) =>
-      item.confidence_label.toLowerCase().includes("insufficient")
-    )
+    .filter((item) => item.confidence_label.toLowerCase().includes("insufficient"))
     .map((item) => labelize(item.aspect));
 
   return {
@@ -1285,257 +1163,6 @@ function cleanBenchmarkSummaryText(value: string) {
     .trim();
 }
 
-// @ts-ignore — retained for reference; superseded by src/components/ReportView.tsx
-function _LegacyReportView({
-  report,
-  dashboard,
-  onOpenReport,
-  onOpenEvidence,
-}: {
-  report: ExecutiveReport | null;
-  dashboard: VisualDashboard;
-  onOpenReport: () => void;
-  onOpenEvidence: () => void;
-}) {
-  const reviewCount = getReviewCount(dashboard);
-  const confidence = buildEvidenceLevel(dashboard, report);
-  const overviewKpis = buildOverviewKpis(dashboard);
-  const sentiment = buildSentimentRead(dashboard);
-  const aspectCards = dashboard.aspect_reason_cards || [];
-  const topAspects = dashboard.top_aspect_chart?.data || [];
-  const benchmarkRows = dashboard.competitor_gap_chart?.data || [];
-  const specRows = dashboard.benchmark_spec_table?.rows || [];
-  const cleanBullets = getCleanReportBullets(report);
-  const actions = dashboard.recommended_actions?.length
-    ? dashboard.recommended_actions.map(cleanThemeText)
-    : report?.recommended_actions.map(cleanThemeText) || [];
-  const strengths = report?.key_strengths?.map(cleanThemeText) || [];
-  const risks = report?.key_risks?.map(cleanThemeText) || [];
-  const competitorTakeaways =
-    report?.competitor_takeaways?.map(cleanThemeText) || [];
-
-  return (
-    <div className="report-view">
-      <div className="tile-section-header">
-        <div>
-          <p className="irip-eyebrow">Executive report</p>
-          <h2>Automated product intelligence brief</h2>
-        </div>
-        <div className="button-pair">
-          <button
-            className="micro-button"
-            type="button"
-            onClick={onOpenEvidence}
-          >
-            Evidence
-          </button>
-          <button
-            className="micro-button primary"
-            type="button"
-            onClick={onOpenReport}
-          >
-            Full Report
-          </button>
-        </div>
-      </div>
-
-      <div className="report-preview-grid">
-        <section className="report-preview-card wide">
-          <span>Executive Snapshot</span>
-          <p>
-            {sentiment.title} This report is generated from {reviewCount} usable
-            review(s), aspect signals, benchmark gaps, and evidence links.
-          </p>
-        </section>
-
-        <section className="report-preview-card">
-          <span>Confidence</span>
-          <p>{confidence.label}</p>
-          <small>{confidence.text}</small>
-        </section>
-
-        <section className="report-preview-card">
-          <span>Review Base</span>
-          <p>{reviewCount} usable reviews</p>
-          <small>
-            {reviewCount < 30 ? "Early signal" : "Directional evidence"}
-          </small>
-        </section>
-      </div>
-
-      <KpiCardGrid cards={overviewKpis} />
-
-      <section className="report-decision-card">
-        <span>Dataset interpretation</span>
-        <p>
-          {confidence.helper} Catalog-only products such as TECNO POVA Curve 2
-          5G and itel Zeno 200 should be shown as coverage gaps unless reviews
-          are imported for them.
-        </p>
-      </section>
-
-      <div className="summary-view-grid">
-        <section className="summary-panel strength">
-          <span>Positive Signals</span>
-          <p>{strengths[0] || "No strong positive signal available yet."}</p>
-        </section>
-
-        <section className="summary-panel risk">
-          <span>Risk Signals</span>
-          <p>{risks[0] || "No strong risk signal available yet."}</p>
-        </section>
-
-        <section className="summary-panel confidence">
-          <span>Competitor Context</span>
-          <p>
-            {competitorTakeaways[0] ||
-              "Select a competitor to strengthen benchmark interpretation."}
-          </p>
-        </section>
-      </div>
-
-      <section className="report-modal-section">
-        <h3>Aspect Intelligence</h3>
-        <div className="report-modal-list">
-          {aspectCards.length ? (
-            aspectCards.slice(0, 8).map((item: AspectReasonCard) => (
-              <div
-                className="report-modal-item"
-                key={`${item.aspect}-${item.reaction}`}
-              >
-                <span />
-                <p>
-                  <strong>{labelize(item.aspect)}:</strong> {item.one_liner} (
-                  {item.mention_count} mention(s), {item.confidence_label})
-                </p>
-              </div>
-            ))
-          ) : topAspects.length ? (
-            topAspects.slice(0, 8).map((item) => (
-              <div className="report-modal-item" key={item.label}>
-                <span />
-                <p>
-                  <strong>{labelize(item.label)}:</strong> {item.value}{" "}
-                  mention(s). {item.helper_text || ""}
-                </p>
-              </div>
-            ))
-          ) : (
-            <div className="report-modal-item">
-              <span />
-              <p>No aspect-level evidence is available yet.</p>
-            </div>
-          )}
-        </div>
-      </section>
-
-      <section className="report-modal-section">
-        <h3>Competitor Benchmark</h3>
-        <div className="report-modal-list">
-          {benchmarkRows.length ? (
-            benchmarkRows.slice(0, 8).map((item) => (
-              <div
-                className="report-modal-item"
-                key={`${item.aspect}-${item.gap}`}
-              >
-                <span />
-                <p>
-                  <strong>{labelize(item.aspect)}:</strong>{" "}
-                  {cleanBenchmarkSummaryText(item.interpretation)} (
-                  {item.confidence_label})
-                </p>
-              </div>
-            ))
-          ) : (
-            <div className="report-modal-item">
-              <span />
-              <p>
-                Select a competitor to generate product-vs-competitor benchmark
-                findings.
-              </p>
-            </div>
-          )}
-        </div>
-      </section>
-
-      <section className="report-modal-section">
-        <h3>Spec Comparison Coverage</h3>
-        <div className="report-modal-list">
-          {specRows.length ? (
-            specRows.slice(0, 8).map((item) => (
-              <div
-                className="report-modal-item"
-                key={`${item.category}-${item.field}`}
-              >
-                <span />
-                <p>
-                  <strong>{item.field}:</strong>{" "}
-                  {formatSpecValue(item.selected_product_value)} vs{" "}
-                  {formatSpecValue(item.competitor_value)}.{" "}
-                  {item.why_it_matters || ""}
-                </p>
-              </div>
-            ))
-          ) : (
-            <div className="report-modal-item">
-              <span />
-              <p>
-                No verified spec comparison table is available for this
-                selection.
-              </p>
-            </div>
-          )}
-        </div>
-      </section>
-
-      <section className="report-modal-section">
-        <h3>Recommended Actions</h3>
-        <div className="report-modal-list">
-          {actions.length ? (
-            actions.slice(0, 8).map((action, index) => (
-              <div
-                className="report-modal-item"
-                key={`${action}-${index}`}
-              >
-                <span />
-                <p>{action}</p>
-              </div>
-            ))
-          ) : (
-            <div className="report-modal-item">
-              <span />
-              <p>
-                Import more recent reviews and validate the strongest aspect
-                signals.
-              </p>
-            </div>
-          )}
-        </div>
-      </section>
-
-      <section className="report-decision-card">
-        <span>Gemini / external report workflow</span>
-        <p>
-          Use the Open Workspace button for the final review feed, cleaning
-          reports, and Gemini report input. Gemini should be used for polished
-          narrative only; the in-app report remains generated from backend data.
-        </p>
-      </section>
-
-      {cleanBullets.length ? (
-        <div className="report-bullets">
-          {cleanBullets.map((item) => (
-            <div className="report-bullet" key={item}>
-              <span />
-              <p>{item}</p>
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function KpiCardGrid({ cards }: { cards: KpiCard[] }) {
   return (
     <div className="kpi-card-grid">
@@ -1543,9 +1170,7 @@ function KpiCardGrid({ cards }: { cards: KpiCard[] }) {
         <article className="kpi-card" key={card.id}>
           <div className="kpi-card-label-row">
             <span>{card.label}</span>
-            {card.status ? (
-              <StatusPill status={card.status} compact />
-            ) : null}
+            {card.status ? <StatusPill status={card.status} compact /> : null}
           </div>
           <strong>{formatValue(card.value)}</strong>
           <p>{card.helper_text || "—"}</p>
@@ -1581,8 +1206,7 @@ function EChartCard({
 
   const option = useMemo(() => {
     if (variant === "donut") return buildDonutOption(chart as ChartBlock);
-    if (variant === "gap")
-      return buildGapOption(chart as CompetitorGapChart);
+    if (variant === "gap") return buildGapOption(chart as CompetitorGapChart);
     return buildHorizontalBarOption(chart as ChartBlock);
   }, [chart, variant]);
 
@@ -1590,16 +1214,12 @@ function EChartCard({
     <section className={`echart-card ${compact ? "compact" : ""}`}>
       <div className="echart-card-header">
         <div>
-          <p className="irip-eyebrow">
-            {chart.chart_type.replace("echarts_", "")}
-          </p>
+          <p className="irip-eyebrow">{chart.chart_type.replace("echarts_", "")}</p>
           <h3>{chart.title}</h3>
         </div>
       </div>
 
-      {chart.description ? (
-        <p className="echart-description">{chart.description}</p>
-      ) : null}
+      {chart.description ? <p className="echart-description">{chart.description}</p> : null}
 
       <div className="echart-stage">
         {chart.data.length && chartReady ? (
@@ -1609,9 +1229,7 @@ function EChartCard({
             lazyUpdate
             opts={{ renderer: "canvas" }}
             style={{ height: "100%", width: "100%", minHeight: 220 }}
-            onChartReady={(instance) => {
-              window.requestAnimationFrame(() => instance.resize());
-            }}
+            onChartReady={(instance) => { window.requestAnimationFrame(() => instance.resize()); }}
           />
         ) : chart.data.length ? (
           <div className="chart-loading-shell">
@@ -1619,10 +1237,7 @@ function EChartCard({
             <span>Preparing chart</span>
           </div>
         ) : (
-          <EmptyCard
-            title="No chart data"
-            text="Import or select a product to populate this visual."
-          />
+          <EmptyCard title="No chart data" text="Import or select a product to populate this visual." />
         )}
       </div>
     </section>
@@ -1634,12 +1249,8 @@ function buildDonutOption(chart: ChartBlock) {
     tooltip: {
       trigger: "item",
       formatter: (params: EChartsItemParam) => {
-        const datum = chart.data.find(
-          (item) => labelize(item.label) === params.name
-        );
-        return `${params.marker}<strong>${params.name}</strong><br/>${params.value} signal(s)<br/>${
-          datum?.helper_text || ""
-        }`;
+        const datum = chart.data.find((item) => labelize(item.label) === params.name);
+        return `${params.marker}<strong>${params.name}</strong><br/>${params.value} signal(s)<br/>${datum?.helper_text || ""}`;
       },
     },
     legend: {
@@ -1659,10 +1270,7 @@ function buildDonutOption(chart: ChartBlock) {
         avoidLabelOverlap: true,
         label: { show: false },
         emphasis: { scale: true, scaleSize: 6 },
-        data: chart.data.map((item) => ({
-          name: labelize(item.label),
-          value: item.value,
-        })),
+        data: chart.data.map((item) => ({ name: labelize(item.label), value: item.value })),
       },
     ],
   };
@@ -1678,9 +1286,7 @@ function buildHorizontalBarOption(chart: ChartBlock) {
       formatter: (params: EChartsAxisParam[]) => {
         const first = params[0];
         const datum = data[first.dataIndex];
-        return `<strong>${first.name}</strong><br/>Value: ${first.value}<br/>${
-          datum?.helper_text || ""
-        }`;
+        return `<strong>${first.name}</strong><br/>Value: ${first.value}<br/>${datum?.helper_text || ""}`;
       },
     },
     xAxis: {
@@ -1754,6 +1360,19 @@ function buildGapOption(chart: CompetitorGapChart) {
   };
 }
 
+// ============================================================
+// Right control panel — with optgroup + search
+// ============================================================
+
+function isOwnBrandProduct(product: ProductItem): boolean {
+  const brand = (product.brand || "").toLowerCase();
+  return (
+    product.is_own_brand === true ||
+    product.own_brand === true ||
+    ["tecno", "infinix", "itel"].includes(brand)
+  );
+}
+
 function RightControlPanel({
   products,
   productsLoading,
@@ -1787,6 +1406,20 @@ function RightControlPanel({
   onOpenEvidence: () => void;
   onOpenReport: () => void;
 }) {
+  const [competitorSearch, setCompetitorSearch] = useState("");
+
+  const ownProducts = products.filter(isOwnBrandProduct);
+  const showSearch = products.length > 10;
+
+  const searchLower = competitorSearch.toLowerCase();
+  const matchesSearch = (p: ProductItem) =>
+    !competitorSearch ||
+    (p.product_name || p.product_id).toLowerCase().includes(searchLower);
+
+  const availableAsCompetitor = products.filter((p) => p.product_id !== selectedProductId);
+  const ownAsCompetitor = availableAsCompetitor.filter(isOwnBrandProduct).filter(matchesSearch);
+  const externalCompetitors = availableAsCompetitor.filter((p) => !isOwnBrandProduct(p)).filter(matchesSearch);
+
   return (
     <aside className="right-control-panel">
       <div className="panel-section panel-title-section">
@@ -1800,6 +1433,7 @@ function RightControlPanel({
       <div className="panel-section">
         <p className="panel-section-title">Scope</p>
 
+        {/* Own product selector */}
         <label className="control-field">
           <span>Product</span>
           <select
@@ -1809,25 +1443,31 @@ function RightControlPanel({
             onChange={(event) => onProductChange(event.target.value)}
           >
             {productsLoading ? <option>Loading products…</option> : null}
-            {products
-              .filter((product) => {
-                const brand = (product.brand || "").toLowerCase();
-                return (
-                  product.is_own_brand === true ||
-                  product.own_brand === true ||
-                  ["tecno", "infinix", "itel"].includes(brand)
-                );
-              })
-              .map((product) => (
+            <optgroup label="Our Products">
+              {ownProducts.map((product) => (
                 <option key={product.product_id} value={product.product_id}>
                   {product.product_name || product.product_id}
                 </option>
               ))}
+            </optgroup>
           </select>
         </label>
 
+        {/* Competitor selector with optgroup + optional search */}
         <label className="control-field">
           <span>Compare with optional</span>
+          {showSearch && (
+            <div className="control-search">
+              <Search size={12} />
+              <input
+                type="text"
+                placeholder="Filter competitors…"
+                value={competitorSearch}
+                onChange={(e) => setCompetitorSearch(e.target.value)}
+                autoComplete="off"
+              />
+            </div>
+          )}
           <select
             id="irip-competitor-select"
             name="competitorProductId"
@@ -1835,13 +1475,24 @@ function RightControlPanel({
             onChange={(event) => onCompetitorChange(event.target.value)}
           >
             <option value="">Select competitor</option>
-            {products
-              .filter((product) => product.product_id !== selectedProductId)
-              .map((product) => (
-                <option key={product.product_id} value={product.product_id}>
-                  {product.product_name || product.product_id}
-                </option>
-              ))}
+            {ownAsCompetitor.length > 0 && (
+              <optgroup label="Our Products">
+                {ownAsCompetitor.map((product) => (
+                  <option key={product.product_id} value={product.product_id}>
+                    {product.product_name || product.product_id}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {externalCompetitors.length > 0 && (
+              <optgroup label="Competitors">
+                {externalCompetitors.map((product) => (
+                  <option key={product.product_id} value={product.product_id}>
+                    {product.product_name || product.product_id}
+                  </option>
+                ))}
+              </optgroup>
+            )}
           </select>
         </label>
 
@@ -1875,11 +1526,7 @@ function RightControlPanel({
           onClick={onGenerate}
           disabled={loading}
         >
-          {loading ? (
-            <Loader2 className="spin" size={16} />
-          ) : (
-            <RefreshCw size={16} />
-          )}
+          {loading ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />}
           <span>
             {loading
               ? "Generating"
@@ -1904,20 +1551,11 @@ function RightControlPanel({
       </div>
 
       <div className="panel-section panel-action-stack">
-        <button
-          className="side-action-button"
-          type="button"
-          onClick={onOpenEvidence}
-        >
+        <button className="side-action-button" type="button" onClick={onOpenEvidence}>
           <Database size={16} />
           <span>Open Evidence</span>
         </button>
-
-        <button
-          className="side-action-button primary"
-          type="button"
-          onClick={onOpenReport}
-        >
+        <button className="side-action-button primary" type="button" onClick={onOpenReport}>
           <FileText size={16} />
           <span>Executive Report</span>
         </button>
@@ -1951,29 +1589,21 @@ function EvidenceDrawer({
         <div className="drawer-body">
           {evidenceLinks.length ? (
             evidenceLinks.map((item, index) => (
-              <article
-                className="evidence-card"
-                key={`${item.label}-${index}`}
-              >
+              <article className="evidence-card" key={`${item.label}-${index}`}>
                 <div className="evidence-card-top">
                   <span>{labelize(item.source_type)}</span>
                   <small>{item.source_name || "IRIP"}</small>
                 </div>
                 <h3>{item.label}</h3>
                 {item.evidence_url ? (
-                  <a href={item.evidence_url} target="_blank" rel="noreferrer">
-                    Open source
-                  </a>
+                  <a href={item.evidence_url} target="_blank" rel="noreferrer">Open source</a>
                 ) : (
                   <code>{item.reference_id || "No reference available"}</code>
                 )}
               </article>
             ))
           ) : (
-            <EmptyCard
-              title="No evidence links"
-              text="Evidence will appear after analysis runs."
-            />
+            <EmptyCard title="No evidence links" text="Evidence will appear after analysis runs." />
           )}
         </div>
       </aside>
@@ -2010,37 +1640,15 @@ function ReportModal({
                 <h3>Confidence note</h3>
                 <p>{report.confidence_note}</p>
               </section>
-
-              <ReportSection
-                title="Executive Summary"
-                items={report.executive_summary.map(cleanThemeText)}
-              />
-              <ReportSection
-                title="Key Strengths"
-                items={report.key_strengths.map(cleanThemeText)}
-              />
-              <ReportSection
-                title="Key Risks"
-                items={report.key_risks.map(cleanThemeText)}
-              />
-              <ReportSection
-                title="Competitor Takeaways"
-                items={report.competitor_takeaways.map(cleanThemeText)}
-              />
-              <ReportSection
-                title="Market News Signals"
-                items={report.market_news_signals.map(cleanThemeText)}
-              />
-              <ReportSection
-                title="Recommended Actions"
-                items={report.recommended_actions.map(cleanThemeText)}
-              />
+              <ReportSection title="Executive Summary" items={report.executive_summary.map(cleanThemeText)} />
+              <ReportSection title="Key Strengths" items={report.key_strengths.map(cleanThemeText)} />
+              <ReportSection title="Key Risks" items={report.key_risks.map(cleanThemeText)} />
+              <ReportSection title="Competitor Takeaways" items={report.competitor_takeaways.map(cleanThemeText)} />
+              <ReportSection title="Market News Signals" items={report.market_news_signals.map(cleanThemeText)} />
+              <ReportSection title="Recommended Actions" items={report.recommended_actions.map(cleanThemeText)} />
             </>
           ) : (
-            <EmptyCard
-              title="Report not loaded"
-              text="Generate the workspace first."
-            />
+            <EmptyCard title="Report not loaded" text="Generate the workspace first." />
           )}
         </div>
       </section>
@@ -2095,16 +1703,8 @@ function ImportPreviewModal({
             <>
               <div className="import-stats-grid">
                 <KpiMini label="Valid" value={preview.valid_count} tone="good" />
-                <KpiMini
-                  label="Failed"
-                  value={preview.failed_count}
-                  tone="bad"
-                />
-                <KpiMini
-                  label="Warnings"
-                  value={preview.warning_count}
-                  tone="warn"
-                />
+                <KpiMini label="Failed" value={preview.failed_count} tone="bad" />
+                <KpiMini label="Warnings" value={preview.warning_count} tone="warn" />
               </div>
 
               <section className="preview-list-section">
@@ -2139,32 +1739,21 @@ function ImportPreviewModal({
               ) : null}
 
               <div className="modal-footer">
-                <button
-                  className="side-action-button"
-                  type="button"
-                  onClick={onClose}
-                >
+                <button className="side-action-button" type="button" onClick={onClose}>
                   Cancel
                 </button>
                 <button
                   className="side-action-button primary"
                   type="button"
                   onClick={onImport}
-                  disabled={
-                    importStatus === "importing" || preview.valid_count === 0
-                  }
+                  disabled={importStatus === "importing" || preview.valid_count === 0}
                 >
-                  {importStatus === "importing"
-                    ? "Importing…"
-                    : "Import Valid Rows"}
+                  {importStatus === "importing" ? "Importing…" : "Import Valid Rows"}
                 </button>
               </div>
             </>
           ) : (
-            <EmptyCard
-              title="No preview"
-              text="Paste a CSV URL and preview first."
-            />
+            <EmptyCard title="No preview" text="Paste a CSV URL and preview first." />
           )}
         </div>
       </section>
@@ -2172,15 +1761,7 @@ function ImportPreviewModal({
   );
 }
 
-function KpiMini({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: number;
-  tone: "good" | "bad" | "warn";
-}) {
+function KpiMini({ label, value, tone }: { label: string; value: number; tone: "good" | "bad" | "warn" }) {
   return (
     <article className={`kpi-mini ${tone}`}>
       <span>{label}</span>
@@ -2189,13 +1770,7 @@ function KpiMini({
   );
 }
 
-function StatusPill({
-  status,
-  compact = false,
-}: {
-  status?: string | null;
-  compact?: boolean;
-}) {
+function StatusPill({ status, compact = false }: { status?: string | null; compact?: boolean }) {
   const tone = statusTone(status);
   return (
     <span className={`status-pill ${tone} ${compact ? "compact" : ""}`}>
@@ -2209,31 +1784,18 @@ function LoadingTile() {
     <div className="loading-tile">
       <Loader2 className="spin" size={28} />
       <h2>Building intelligence view</h2>
-      <p>
-        Loading dashboard visuals, report sections, confidence notes, and
-        evidence links.
-      </p>
+      <p>Loading dashboard visuals, report sections, confidence notes, and evidence links.</p>
     </div>
   );
 }
 
-function ErrorTile({
-  message,
-  onRetry,
-}: {
-  message: string;
-  onRetry: () => void;
-}) {
+function ErrorTile({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <div className="loading-tile error">
       <AlertTriangle size={28} />
       <h2>Workspace failed to load</h2>
       <p>{message}</p>
-      <button
-        className="generate-button small"
-        type="button"
-        onClick={onRetry}
-      >
+      <button className="generate-button small" type="button" onClick={onRetry}>
         Retry
       </button>
     </div>
@@ -2246,11 +1808,7 @@ function EmptyWorkspace({ onRetry }: { onRetry: () => void }) {
       <Database size={28} />
       <h2>No workspace loaded</h2>
       <p>Select product scope and generate the intelligence view.</p>
-      <button
-        className="generate-button small"
-        type="button"
-        onClick={onRetry}
-      >
+      <button className="generate-button small" type="button" onClick={onRetry}>
         Generate View
       </button>
     </div>
@@ -2262,6 +1820,176 @@ function EmptyCard({ title, text }: { title: string; text: string }) {
     <div className="empty-card">
       <h3>{title}</h3>
       <p>{text}</p>
+    </div>
+  );
+}
+
+// @ts-ignore — retained for reference; superseded by src/components/ReportView.tsx
+function _LegacyReportView({
+  report,
+  dashboard,
+  onOpenReport,
+  onOpenEvidence,
+}: {
+  report: ExecutiveReport | null;
+  dashboard: VisualDashboard;
+  onOpenReport: () => void;
+  onOpenEvidence: () => void;
+}) {
+  const reviewCount = getReviewCount(dashboard);
+  const confidence = buildEvidenceLevel(dashboard, report);
+  const overviewKpis = buildOverviewKpis(dashboard);
+  const sentiment = buildSentimentRead(dashboard);
+  const aspectCards = dashboard.aspect_reason_cards || [];
+  const topAspects = dashboard.top_aspect_chart?.data || [];
+  const benchmarkRows = dashboard.competitor_gap_chart?.data || [];
+  const specRows = dashboard.benchmark_spec_table?.rows || [];
+  const cleanBullets = getCleanReportBullets(report);
+  const actions = dashboard.recommended_actions?.length
+    ? dashboard.recommended_actions.map(cleanThemeText)
+    : report?.recommended_actions.map(cleanThemeText) || [];
+  const strengths = report?.key_strengths?.map(cleanThemeText) || [];
+  const risks = report?.key_risks?.map(cleanThemeText) || [];
+  const competitorTakeaways = report?.competitor_takeaways?.map(cleanThemeText) || [];
+
+  return (
+    <div className="report-view">
+      <div className="tile-section-header">
+        <div>
+          <p className="irip-eyebrow">Executive report</p>
+          <h2>Automated product intelligence brief</h2>
+        </div>
+        <div className="button-pair">
+          <button className="micro-button" type="button" onClick={onOpenEvidence}>Evidence</button>
+          <button className="micro-button primary" type="button" onClick={onOpenReport}>Full Report</button>
+        </div>
+      </div>
+
+      <div className="report-preview-grid">
+        <section className="report-preview-card wide">
+          <span>Executive Snapshot</span>
+          <p>{sentiment.title} This report is generated from {reviewCount} usable review(s), aspect signals, benchmark gaps, and evidence links.</p>
+        </section>
+        <section className="report-preview-card">
+          <span>Confidence</span>
+          <p>{confidence.label}</p>
+          <small>{confidence.text}</small>
+        </section>
+        <section className="report-preview-card">
+          <span>Review Base</span>
+          <p>{reviewCount} usable reviews</p>
+          <small>{reviewCount < 30 ? "Early signal" : "Directional evidence"}</small>
+        </section>
+      </div>
+
+      <KpiCardGrid cards={overviewKpis} />
+
+      <section className="report-decision-card">
+        <span>Dataset interpretation</span>
+        <p>{confidence.helper} Catalog-only products such as TECNO POVA Curve 2 5G and itel Zeno 200 should be shown as coverage gaps unless reviews are imported for them.</p>
+      </section>
+
+      <div className="summary-view-grid">
+        <section className="summary-panel strength">
+          <span>Positive Signals</span>
+          <p>{strengths[0] || "No strong positive signal available yet."}</p>
+        </section>
+        <section className="summary-panel risk">
+          <span>Risk Signals</span>
+          <p>{risks[0] || "No strong risk signal available yet."}</p>
+        </section>
+        <section className="summary-panel confidence">
+          <span>Competitor Context</span>
+          <p>{competitorTakeaways[0] || "Select a competitor to strengthen benchmark interpretation."}</p>
+        </section>
+      </div>
+
+      <section className="report-modal-section">
+        <h3>Aspect Intelligence</h3>
+        <div className="report-modal-list">
+          {aspectCards.length ? (
+            aspectCards.slice(0, 8).map((item: AspectReasonCard) => (
+              <div className="report-modal-item" key={`${item.aspect}-${item.reaction}`}>
+                <span />
+                <p><strong>{labelize(item.aspect)}:</strong> {item.one_liner} ({item.mention_count} mention(s), {item.confidence_label})</p>
+              </div>
+            ))
+          ) : topAspects.length ? (
+            topAspects.slice(0, 8).map((item) => (
+              <div className="report-modal-item" key={item.label}>
+                <span />
+                <p><strong>{labelize(item.label)}:</strong> {item.value} mention(s). {item.helper_text || ""}</p>
+              </div>
+            ))
+          ) : (
+            <div className="report-modal-item"><span /><p>No aspect-level evidence is available yet.</p></div>
+          )}
+        </div>
+      </section>
+
+      <section className="report-modal-section">
+        <h3>Competitor Benchmark</h3>
+        <div className="report-modal-list">
+          {benchmarkRows.length ? (
+            benchmarkRows.slice(0, 8).map((item) => (
+              <div className="report-modal-item" key={`${item.aspect}-${item.gap}`}>
+                <span />
+                <p><strong>{labelize(item.aspect)}:</strong> {cleanBenchmarkSummaryText(item.interpretation)} ({item.confidence_label})</p>
+              </div>
+            ))
+          ) : (
+            <div className="report-modal-item"><span /><p>Select a competitor to generate product-vs-competitor benchmark findings.</p></div>
+          )}
+        </div>
+      </section>
+
+      <section className="report-modal-section">
+        <h3>Spec Comparison Coverage</h3>
+        <div className="report-modal-list">
+          {specRows.length ? (
+            specRows.slice(0, 8).map((item) => (
+              <div className="report-modal-item" key={`${item.category}-${item.field}`}>
+                <span />
+                <p><strong>{item.field}:</strong> {formatSpecValue(item.selected_product_value)} vs {formatSpecValue(item.competitor_value)}. {item.why_it_matters || ""}</p>
+              </div>
+            ))
+          ) : (
+            <div className="report-modal-item"><span /><p>No verified spec comparison table is available for this selection.</p></div>
+          )}
+        </div>
+      </section>
+
+      <section className="report-modal-section">
+        <h3>Recommended Actions</h3>
+        <div className="report-modal-list">
+          {actions.length ? (
+            actions.slice(0, 8).map((action, index) => (
+              <div className="report-modal-item" key={`${action}-${index}`}>
+                <span />
+                <p>{action}</p>
+              </div>
+            ))
+          ) : (
+            <div className="report-modal-item"><span /><p>Import more recent reviews and validate the strongest aspect signals.</p></div>
+          )}
+        </div>
+      </section>
+
+      <section className="report-decision-card">
+        <span>Gemini / external report workflow</span>
+        <p>Use the Open Workspace button for the final review feed, cleaning reports, and Gemini report input. Gemini should be used for polished narrative only; the in-app report remains generated from backend data.</p>
+      </section>
+
+      {cleanBullets.length ? (
+        <div className="report-bullets">
+          {cleanBullets.map((item) => (
+            <div className="report-bullet" key={item}>
+              <span />
+              <p>{item}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
