@@ -1,17 +1,21 @@
 """Amazon.in review scraper for IRIP.
 
 Runs in GitHub Actions, NOT on Render. Designed for:
+  - ScraperAPI hybrid mode: residential proxy as primary, direct as fallback
   - Polite scraping (configurable delay between pages)
   - Resilient parsing (return [] on any page error, never raise)
   - Recent-only mode for daily automation (days_back=7)
   - Connection reuse via requests.Session
 
 Typical daily-run usage:
-    scraper = AmazonReviewScraper(delay_seconds=2)
+    from app.scrapers.proxy import ApiKeyPool
+    pool = ApiKeyPool.from_env(os.getenv("SCRAPERAPI_KEY"))
+
+    scraper = AmazonReviewScraper(delay_seconds=2, scraperapi_pool=pool)
     reviews = scraper.scrape_recent_only(
         asin="B0EXAMPLE",
-        product_id="infinix_hot_50_pro",
-        product_name="Infinix Hot 50 Pro",
+        product_id="infinix_note_60_pro",
+        product_name="Infinix Note 60 Pro",
         brand="Infinix",
         days_back=7,
     )
@@ -92,7 +96,15 @@ def _text(element: Tag | None, sep: str = " ") -> str:
 
 
 class AmazonReviewScraper:
-    """Polite Amazon.in review scraper.
+    """Amazon.in review scraper with ScraperAPI hybrid mode.
+
+    When an ApiKeyPool is provided, requests are routed through ScraperAPI's
+    residential proxy network first.  If that attempt fails validation (CAPTCHA,
+    suspiciously short response, non-200 status), the scraper falls back to a
+    direct request once — useful on environments with residential IPs (local dev).
+
+    On Azure/GitHub Actions without ScraperAPI, direct requests will always hit
+    Amazon's datacenter block and return [].  Always pass a pool in CI.
 
     One instance per scraping job — reuses a requests.Session for
     connection pooling across pages of the same product.
@@ -113,10 +125,30 @@ class AmazonReviewScraper:
         "Connection": "keep-alive",
     }
 
-    def __init__(self, delay_seconds: float = 2) -> None:
+    def __init__(
+        self,
+        delay_seconds: float = 2,
+        scraperapi_pool: Any | None = None,
+    ) -> None:
+        """
+        Args:
+            delay_seconds:    Pause between page fetches (polite scraping).
+            scraperapi_pool:  ApiKeyPool instance.  None = direct requests only.
+        """
         self.delay_seconds = delay_seconds
+        self._pool = scraperapi_pool
         self._session = requests.Session()
         self._session.headers.update(self._HEADERS)
+
+    # ----------------------------------------------------------
+    # URL building
+    # ----------------------------------------------------------
+
+    def _build_url(self, url: str) -> str:
+        """Return the ScraperAPI proxy URL for *url*, or *url* unchanged."""
+        if self._pool is None:
+            return url
+        return self._pool.build_url(url, render=False, country_code="in")
 
     # ----------------------------------------------------------
     # Public API
@@ -125,46 +157,80 @@ class AmazonReviewScraper:
     def get_reviews_page(self, asin: str, page: int = 1) -> list[dict[str, Any]]:
         """Fetch and parse one page of reviews for *asin*.
 
+        Attempt order when ScraperAPI pool is configured:
+          1. ScraperAPI residential proxy — bypasses datacenter IP blocks.
+          2. Direct request — fallback if ScraperAPI response fails validation.
+             (Useful locally; on Azure this attempt will also return [].)
+
+        Without a pool, only the direct attempt is made.
+
         Args:
             asin: Amazon Standard Identification Number (e.g. "B0CX1234AB").
             page: 1-based page number.
 
         Returns:
-            List of review dicts. Empty list on any network or parse error —
+            List of review dicts.  Empty list on any network or parse error —
             this method never raises.
         """
-        url = (
+        target_url = (
             f"https://www.amazon.in/product-reviews/{asin}"
             f"?pageNumber={page}&sortBy=recent"
         )
-        try:
-            response = self._session.get(url, timeout=15)
-        except Exception:
-            return []
 
-        if response.status_code != 200:
-            return []
+        # Build attempt list: (label, url_to_fetch)
+        attempts: list[tuple[str, str]] = []
+        if self._pool is not None:
+            attempts.append(("scraperapi", self._build_url(target_url)))
+        attempts.append(("direct", target_url))
 
-        content = response.text
-        if "captcha" in content.lower() or 'id="captchacharacters"' in content:
-            return []
+        for label, fetch_url in attempts:
+            try:
+                response = self._session.get(fetch_url, timeout=30)
+            except Exception as exc:
+                print(f"    [Amazon/{label}] Network error page {page}: {exc}")
+                continue
 
-        try:
-            soup = BeautifulSoup(response.content, "lxml")
-        except Exception:
-            return []
+            if response.status_code != 200:
+                print(
+                    f"    [Amazon/{label}] HTTP {response.status_code} — "
+                    f"page {page} of ASIN {asin}"
+                )
+                continue
 
-        containers = soup.find_all("div", {"data-hook": "review"})
-        if not containers:
-            return []
+            content = response.text
 
-        reviews: list[dict[str, Any]] = []
-        for container in containers:
-            parsed = self._parse_review_container(container)
-            if parsed is not None:
-                reviews.append(parsed)
+            # ── Anti-bot guards ─────────────────────────────────────────
+            if "captcha" in content.lower() or 'id="captchacharacters"' in content:
+                print(
+                    f"    [Amazon/{label}] CAPTCHA_WALL — "
+                    f"page {page} of ASIN {asin}"
+                )
+                continue
+            if len(content) < 2000:
+                print(
+                    f"    [Amazon/{label}] SHORT_RESPONSE "
+                    f"({len(content)} chars) — page {page} of ASIN {asin}"
+                )
+                continue
 
-        return reviews
+            try:
+                soup = BeautifulSoup(response.content, "lxml")
+            except Exception:
+                continue
+
+            containers = soup.find_all("div", {"data-hook": "review"})
+            if not containers:
+                return []  # valid empty page — end of review list
+
+            reviews: list[dict[str, Any]] = []
+            for container in containers:
+                parsed = self._parse_review_container(container)
+                if parsed is not None:
+                    reviews.append(parsed)
+
+            return reviews  # success — stop trying further attempts
+
+        return []  # all attempts failed
 
     def scrape_product(
         self,
@@ -255,7 +321,6 @@ class AmazonReviewScraper:
             review_id: str = container.get("id", "")  # type: ignore[assignment]
 
             # ── rating ───────────────────────────────────────────────────
-            # Try the direct span first, then fall back to the <i> wrapper.
             rating: float | None = None
             rating_elem: Tag | None = container.find(  # type: ignore[assignment]
                 "span", {"data-hook": "review-star-rating"}
@@ -272,8 +337,6 @@ class AmazonReviewScraper:
                     rating = float(m.group(1))
 
             # ── title ────────────────────────────────────────────────────
-            # The title span often wraps star icons inside child spans;
-            # grab the last non-empty child span to skip rating text.
             title = ""
             title_elem: Tag | None = container.find(  # type: ignore[assignment]
                 "span", {"data-hook": "review-title"}

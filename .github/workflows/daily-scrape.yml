@@ -49,16 +49,31 @@ jobs:
       - name: Run daily scrape
         env:
           DAYS_BACK: ${{ github.event.inputs.days_back || '7' }}
+          # ScraperAPI key — routes requests through residential IPs so
+          # Amazon.in / Flipkart datacenter blocks don't return empty results.
+          # Set via GitHub repo Settings → Secrets → Actions → SCRAPERAPI_KEY.
+          SCRAPERAPI_KEY: ${{ secrets.SCRAPERAPI_KEY }}
+          # Live backend URL for the Discovery-Scraper Bridge (GET /products).
+          BACKEND_API_URL: https://irip-api.onrender.com
         run: |
           python scripts/run_daily_scrape.py --days-back "$DAYS_BACK"
 
-      # ── 6. Upload CSV artifact (always — useful for debugging failures) ───────
+      # ── 6. Upload artifacts (always — useful for debugging failures) ──────────
       - name: Upload scraped CSV artifact
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: scraped-reviews-${{ github.run_id }}
           path: scraped_reviews.csv
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Upload scrape summary artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scrape-summary-${{ github.run_id }}
+          path: scrape_summary.json
           retention-days: 7
           if-no-files-found: ignore
 

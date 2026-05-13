@@ -2,13 +2,18 @@
 
 Runs in GitHub Actions, NOT on Render. Key differences from the Amazon scraper:
   - Session seeded with homepage GET in __init__ to capture initial cookies
+    (skipped when ScraperAPI is active — ScraperAPI manages its own sessions)
   - No stable id attribute on review elements → synthesise review_id from text hash
   - CSS class names change frequently → each field uses a cascade of fallback selectors
   - Relative dates ("2 months ago") parsed alongside absolute ("15 March, 2025")
   - Flipkart 429/503 blocks are common → _get_with_retry with exponential backoff
+  - ScraperAPI hybrid mode: residential proxy as primary, direct as fallback
 
 Typical daily-run usage:
-    scraper = FlipkartReviewScraper(delay_seconds=2)
+    from app.scrapers.proxy import ApiKeyPool
+    pool = ApiKeyPool.from_env(os.getenv("SCRAPERAPI_KEY"))
+
+    scraper = FlipkartReviewScraper(delay_seconds=2, scraperapi_pool=pool)
     reviews = scraper.scrape_recent_only(
         product_url="https://www.flipkart.com/infinix-hot-50-pro/p/itmf7c3cd1e84593",
         product_id="infinix_hot_50_pro",
@@ -54,7 +59,6 @@ def _parse_relative_date(text: str) -> str:
     lower = text.lower().strip()
     today = date.today()
 
-    # Immediate / same-day
     if any(x in lower for x in ("just now", "today", "hour ago", "hours ago",
                                   "minute ago", "minutes ago", "second")):
         return today.isoformat()
@@ -62,34 +66,27 @@ def _parse_relative_date(text: str) -> str:
     if "yesterday" in lower:
         return (today - timedelta(days=1)).isoformat()
 
-    # "N days ago"
     m = re.search(r"(\d+)\s+day", lower)
     if m:
         return (today - timedelta(days=int(m.group(1)))).isoformat()
 
-    # "a day ago"
     if re.search(r"\ba\s+day", lower):
         return (today - timedelta(days=1)).isoformat()
 
-    # "N weeks ago"
     m = re.search(r"(\d+)\s+week", lower)
     if m:
         return (today - timedelta(weeks=int(m.group(1)))).isoformat()
 
-    # "a week ago"
     if re.search(r"\ba\s+week", lower):
         return (today - timedelta(weeks=1)).isoformat()
 
-    # "N months ago"
     m = re.search(r"(\d+)\s+month", lower)
     if m:
         return (today - timedelta(days=30 * int(m.group(1)))).isoformat()
 
-    # "a month ago"
     if re.search(r"\ba\s+month", lower):
         return (today - timedelta(days=30)).isoformat()
 
-    # "N years ago"
     m = re.search(r"(\d+)\s+year", lower)
     if m:
         return (today - timedelta(days=365 * int(m.group(1)))).isoformat()
@@ -110,14 +107,12 @@ def _parse_flipkart_date(date_text: str) -> str:
     text = date_text.strip()
     lower = text.lower()
 
-    # ── Relative date (highest priority on Flipkart) ─────────────────────────
     if "ago" in lower or "yesterday" in lower or "today" in lower or "hour" in lower:
         result = _parse_relative_date(lower)
         if result:
             return result
 
-    # ── Pattern A: day + month name + year ───────────────────────────────────
-    # Matches "15 Mar, 2025" / "3rd April, 2024" / "15 March 2025"
+    # Pattern A: day + month name + year
     m = re.search(
         r"(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+),?\s+(\d{4})",
         text,
@@ -131,8 +126,7 @@ def _parse_flipkart_date(date_text: str) -> str:
             except ValueError:
                 pass
 
-    # ── Pattern B: month name + year only ────────────────────────────────────
-    # Matches "Mar 2025" / "March 2025"
+    # Pattern B: month name + year only
     m = re.search(r"([A-Za-z]+)\s+(\d{4})", text)
     if m:
         month_str, year_str = m.groups()
@@ -174,51 +168,47 @@ def _find_first(
 # Selector tables  (CSS classes change; multiple fallbacks per field)
 # ============================================================
 
-# Each entry is (html_tag, {attr: value_or_compiled_regex}).
-# Specific class names listed first (exact match = fastest), regex fallbacks last.
-
 _RATING_SELECTORS: list[tuple[str, dict[str, Any]]] = [
-    ("div", {"class": "_3LWZlK"}),                       # primary (2022-2024)
-    ("div", {"class": "X_4Vge"}),                         # alternate layout
-    ("span", {"class": re.compile(r"_1l_f")}),            # partial class match
-    ("div", {"class": re.compile(r"LWZlK")}),             # regex fallback (handles prefix variants)
-    ("div", {"class": re.compile(r"1lRcqv")}),            # 2023+ variant
-    ("span", {"class": re.compile(r"XQDdHH")}),           # 2024+ variant
+    ("div", {"class": "_3LWZlK"}),
+    ("div", {"class": "X_4Vge"}),
+    ("span", {"class": re.compile(r"_1l_f")}),
+    ("div", {"class": re.compile(r"LWZlK")}),
+    ("div", {"class": re.compile(r"1lRcqv")}),
+    ("span", {"class": re.compile(r"XQDdHH")}),
     ("span", {"class": re.compile(r"rating|star", re.I)}),
 ]
 
 _TITLE_SELECTORS: list[tuple[str, dict[str, Any]]] = [
-    ("p", {"class": "_2-N8zT"}),                          # primary (2022-2024)
-    ("p", {"class": "YU7NEW"}),                            # 2024+ variant
-    ("p", {"class": "z9E0IG"}),                            # alternate
+    ("p", {"class": "_2-N8zT"}),
+    ("p", {"class": "YU7NEW"}),
+    ("p", {"class": "z9E0IG"}),
     ("p", {"class": re.compile(r"2-N8zT|YU7NEW|z9E0IG")}),
     ("p", {"class": re.compile(r"title|head", re.I)}),
 ]
 
 _BODY_SELECTORS: list[tuple[str, dict[str, Any]]] = [
-    ("div", {"class": "t-ZTKy"}),                         # primary (2022-2024)
-    ("div", {"class": "ZmyHeo"}),                          # alternate
-    ("div", {"class": "qwjRop"}),                          # 2024+ variant
+    ("div", {"class": "t-ZTKy"}),
+    ("div", {"class": "ZmyHeo"}),
+    ("div", {"class": "qwjRop"}),
     ("div", {"class": re.compile(r"t-ZTKy|ZmyHeo|qwjRop")}),
     ("div", {"class": re.compile(r"review.?body|review.?text", re.I)}),
 ]
 
 _DATE_SELECTORS: list[tuple[str, dict[str, Any]]] = [
-    ("p", {"class": "_2sc7ZR"}),                          # primary (2022-2024)
-    ("p", {"class": "_2NsTMU"}),                           # 2023+ variant
-    ("span", {"class": "igWgfA"}),                         # 2024+ variant
+    ("p", {"class": "_2sc7ZR"}),
+    ("p", {"class": "_2NsTMU"}),
+    ("span", {"class": "igWgfA"}),
     ("p", {"class": re.compile(r"2sc7ZR|NsTMU")}),
     ("span", {"class": re.compile(r"igWgfA")}),
     ("p", {"class": re.compile(r"date|time", re.I)}),
 ]
 
 _CERTIFIED_SELECTORS: list[tuple[str, dict[str, Any]]] = [
-    ("span", {"class": re.compile(r"2f_wVX|gP75ns")}),   # Certified Buyer badge
+    ("span", {"class": re.compile(r"2f_wVX|gP75ns")}),
     ("div", {"class": re.compile(r"2f_wVX|gP75ns")}),
     ("span", {"class": re.compile(r"certified", re.I)}),
 ]
 
-# Selectors for the review-list wrapper (holds all review cards as children)
 _LIST_CONTAINER_CLASSES: list[str] = [
     "_1YokD2", "DOjaWF", "EGXnDv", "_3OzQFP", "_2kHMtA", "RYR41S",
 ]
@@ -230,11 +220,16 @@ _LIST_CONTAINER_CLASSES: list[str] = [
 
 
 class FlipkartReviewScraper:
-    """Polite Flipkart review scraper with retry logic and fallback CSS selectors.
+    """Flipkart review scraper with retry logic, fallback CSS selectors, and
+    ScraperAPI hybrid mode.
 
-    One instance per scraping job. The requests.Session is seeded with cookies
-    from Flipkart's homepage in __init__, then warmed further with the specific
-    product page before the first review fetch.
+    When an ApiKeyPool is provided, requests are routed through ScraperAPI's
+    residential proxy network first.  Direct session cookie warm-up is skipped
+    in ScraperAPI mode because ScraperAPI manages its own session cookies
+    internally.  On validation failure (CAPTCHA, short response, bad status),
+    the scraper falls back to a direct request.
+
+    One instance per scraping job.
     """
 
     _BASE_URL: str = "https://www.flipkart.com/"
@@ -255,19 +250,40 @@ class FlipkartReviewScraper:
         "Connection": "keep-alive",
     }
 
-    def __init__(self, delay_seconds: float = 2) -> None:
+    def __init__(
+        self,
+        delay_seconds: float = 2,
+        scraperapi_pool: Any | None = None,
+    ) -> None:
+        """
+        Args:
+            delay_seconds:    Pause between page fetches (polite scraping).
+            scraperapi_pool:  ApiKeyPool instance.  None = direct requests only.
+        """
         self.delay_seconds = delay_seconds
+        self._pool = scraperapi_pool
         self._session = requests.Session()
         self._session.headers.update(self._HEADERS)
         self._session_warmed = False
 
-        # Seed session with Flipkart homepage cookies immediately.
-        # Flipkart's review endpoints validate session cookies; without this
-        # initial GET the server returns empty or redirected responses.
-        try:
-            self._session.get(self._BASE_URL, timeout=10)
-        except Exception:
-            pass
+        # Seed session with Flipkart homepage cookies — only for direct requests.
+        # ScraperAPI manages its own session state; the homepage GET here would
+        # cost a proxy credit and accomplish nothing on Flipkart's side.
+        if self._pool is None:
+            try:
+                self._session.get(self._BASE_URL, timeout=10)
+            except Exception:
+                pass
+
+    # ----------------------------------------------------------
+    # URL building
+    # ----------------------------------------------------------
+
+    def _build_url(self, url: str) -> str:
+        """Return the ScraperAPI proxy URL for *url*, or *url* unchanged."""
+        if self._pool is None:
+            return url
+        return self._pool.build_url(url, render=False, country_code="in")
 
     # ----------------------------------------------------------
     # Retry-aware GET
@@ -277,15 +293,17 @@ class FlipkartReviewScraper:
         self,
         url: str,
         retries: int = 3,
+        label: str = "direct",
     ) -> requests.Response | None:
-        """GET *url*, retrying on 429/503 with exponential backoff (2s, 4s, 8s).
+        """GET *url* (already proxy-wrapped if ScraperAPI is active), retrying on
+        429/503 with exponential backoff (2s, 4s, 8s).
 
         Returns None after all attempts fail (never raises).
         """
         delay = 2.0
         for attempt in range(retries):
             try:
-                response = self._session.get(url, timeout=15)
+                response = self._session.get(url, timeout=20)
                 if response.status_code in (429, 503):
                     if attempt < retries - 1:
                         time.sleep(delay)
@@ -306,20 +324,23 @@ class FlipkartReviewScraper:
     def _warm_session(self, product_url: str) -> None:
         """GET the product page to seed product-specific session cookies.
 
-        Runs at most once per scraper instance. The homepage GET in __init__
-        handles global cookies; this covers product-page-specific ones.
+        Runs at most once per scraper instance.  Skipped in ScraperAPI mode
+        to save proxy credits (ScraperAPI handles product-page cookies internally).
         """
         if self._session_warmed:
             return
+        self._session_warmed = True  # set first to prevent repeat on failure
+
+        if self._pool is not None:
+            return  # ScraperAPI manages its own session
+
         try:
             self._get_with_retry(product_url, retries=2)
         except Exception:
             pass
-        finally:
-            self._session_warmed = True
 
     # ----------------------------------------------------------
-    # URL building
+    # URL building for review pages
     # ----------------------------------------------------------
 
     @staticmethod
@@ -354,47 +375,72 @@ class FlipkartReviewScraper:
     ) -> list[dict[str, Any]]:
         """Fetch and parse one page of Flipkart reviews.
 
+        Attempt order when ScraperAPI pool is configured:
+          1. ScraperAPI residential proxy.
+          2. Direct request — fallback if ScraperAPI response fails validation.
+
         Args:
             product_url: Full Flipkart product URL (must contain ``/p/``).
             page: 1-based page number.
 
         Returns:
-            List of review dicts. Empty list on any network or parse error —
+            List of review dicts.  Empty list on any network or parse error —
             this method never raises.
         """
         self._warm_session(product_url)
 
-        url = self._build_reviews_url(product_url, page)
-        response = self._get_with_retry(url)
-        if response is None or response.status_code != 200:
-            return []
+        target_url = self._build_reviews_url(product_url, page)
 
-        content = response.text
-        # Detect anti-bot walls / login redirects
-        if (
-            "captcha" in content.lower()
-            or "robot" in content.lower()
-            or "verify you are human" in content.lower()
-            or len(content) < 2000  # suspiciously short → likely a redirect stub
-        ):
-            return []
+        # Build attempt list: (label, fetch_url)
+        attempts: list[tuple[str, str]] = []
+        if self._pool is not None:
+            attempts.append(("scraperapi", self._build_url(target_url)))
+        attempts.append(("direct", target_url))
 
-        try:
-            soup = BeautifulSoup(response.content, "lxml")
-        except Exception:
-            return []
+        for label, fetch_url in attempts:
+            response = self._get_with_retry(fetch_url, label=label)
+            if response is None or response.status_code != 200:
+                status = response.status_code if response else "TIMEOUT"
+                print(
+                    f"    [Flipkart/{label}] HTTP {status} — "
+                    f"page {page}"
+                )
+                continue
 
-        containers = self._find_review_containers(soup)
-        if not containers:
-            return []
+            content = response.text
 
-        reviews: list[dict[str, Any]] = []
-        for container in containers:
-            parsed = self._parse_review_container(container)
-            if parsed is not None:
-                reviews.append(parsed)
+            # ── Anti-bot guards ─────────────────────────────────────────
+            if "captcha" in content.lower():
+                print(f"    [Flipkart/{label}] CAPTCHA_WALL — page {page}")
+                continue
+            if "robot" in content.lower() or "verify you are human" in content.lower():
+                print(f"    [Flipkart/{label}] BOT_WALL — page {page}")
+                continue
+            if len(content) < 2000:
+                print(
+                    f"    [Flipkart/{label}] SHORT_RESPONSE "
+                    f"({len(content)} chars) — page {page}"
+                )
+                continue
 
-        return reviews
+            try:
+                soup = BeautifulSoup(response.content, "lxml")
+            except Exception:
+                continue
+
+            containers = self._find_review_containers(soup)
+            if not containers:
+                return []  # valid empty page — end of review list
+
+            reviews: list[dict[str, Any]] = []
+            for container in containers:
+                parsed = self._parse_review_container(container)
+                if parsed is not None:
+                    reviews.append(parsed)
+
+            return reviews  # success — stop trying further attempts
+
+        return []  # all attempts failed
 
     def scrape_product(
         self,
@@ -537,11 +583,9 @@ class FlipkartReviewScraper:
         """
         try:
             # ── raw_text ─────────────────────────────────────────────────
-            # Primary: div.t-ZTKy (or fallback). Flipkart nests text two divs deep.
             raw_text = ""
             body_elem = _find_first(container, _BODY_SELECTORS)
             if body_elem is not None:
-                # dig into div.t-ZTKy > div > div for the actual prose
                 inner = body_elem.find("div")
                 if inner is not None:
                     deeper = inner.find("div")
@@ -552,18 +596,15 @@ class FlipkartReviewScraper:
                 return None
 
             # ── review_id ────────────────────────────────────────────────
-            # Flipkart has no stable id attr; synthesise from first 30 chars.
             review_id = f"fk_{_stable_hash(raw_text[:30])}"
 
             # ── rating ───────────────────────────────────────────────────
-            # Tries div._3LWZlK first, then div.X_4Vge, then span[class*=_1l_f].
             rating: float | None = None
             rating_elem = _find_first(container, _RATING_SELECTORS)
             if rating_elem is not None:
                 m = re.search(r"(\d+(?:\.\d+)?)", _text(rating_elem))
                 if m:
                     value = float(m.group(1))
-                    # Guard: some old layouts stored "50" meaning 5.0
                     rating = value / 10 if value > 5 else value
 
             # ── title ────────────────────────────────────────────────────
@@ -573,7 +614,6 @@ class FlipkartReviewScraper:
                 title = _text(title_elem)
 
             # ── review_date ──────────────────────────────────────────────
-            # Handles both "2 months ago" (relative) and "15 Mar, 2025" (absolute).
             review_date = ""
             date_elem = _find_first(container, _DATE_SELECTORS)
             if date_elem is not None:
@@ -588,7 +628,6 @@ class FlipkartReviewScraper:
                 verified_purchase = "certified buyer" in container_text.lower()
 
             # ── helpful_votes ────────────────────────────────────────────
-            # Flipkart does not surface a vote count in review card HTML.
             helpful_votes = 0
 
             return {

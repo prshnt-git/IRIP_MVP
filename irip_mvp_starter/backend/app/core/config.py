@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     # Example: GEMINI_API_KEYS=AIza...key1,AIza...key2,AIza...key3
     gemini_api_keys: str | None = None
     database_path: str = "data/irip_mvp.db"
+    # PostgreSQL connection URL for Supabase (Phase 4 migration).
+    # Format: postgresql+psycopg2://user:password@host:5432/dbname
+    # When set, get_engine() and get_session() in database.py use PostgreSQL.
+    # When unset, the existing SQLite path is used unchanged.
+    database_url: str | None = None
 
     # LLM pipeline settings — mirrored from env vars used across the codebase.
     irip_llm_mode: str = "selective"

@@ -771,3 +771,99 @@ def _column_exists(
 ) -> bool:
     rows = connection.execute(f"PRAGMA table_info({table_name})").fetchall()
     return any(row["name"] == column_name for row in rows)
+
+
+# ============================================================
+# PostgreSQL / SQLAlchemy layer  (Supabase-ready)
+# ============================================================
+#
+# Usage pattern for new endpoints:
+#
+#   from app.db.database import get_session
+#   from sqlalchemy import text
+#
+#   with get_session() as session:
+#       rows = session.execute(text("SELECT * FROM products")).fetchall()
+#
+# The existing connect() / init_db() SQLite functions above are
+# unchanged and remain the primary path until Phase 4 migration.
+# ============================================================
+
+import os as _os
+from contextlib import contextmanager as _contextmanager
+from typing import Generator as _Generator
+
+
+def _database_url() -> str | None:
+    """Return DATABASE_URL from environment, or None if not set."""
+    return _os.environ.get("DATABASE_URL")
+
+
+def get_engine():
+    """Return a SQLAlchemy Engine appropriate for the current environment.
+
+    Selection logic:
+      - DATABASE_URL env var set  → PostgreSQL engine (Supabase-compatible).
+        Uses QueuePool (SQLAlchemy default) which is thread-safe: each thread
+        borrows a connection from a managed pool, returns it after use.
+      - DATABASE_URL not set      → SQLite engine backed by the path in Settings.
+        Uses StaticPool with check_same_thread=False — serialises SQLite I/O
+        safely across FastAPI's multi-threaded workers.
+
+    Raises RuntimeError if sqlalchemy is not installed.
+    """
+    try:
+        from sqlalchemy import create_engine
+        from sqlalchemy.pool import StaticPool
+    except ImportError as exc:
+        raise RuntimeError(
+            "sqlalchemy is required. Add it to requirements.txt and pip install."
+        ) from exc
+
+    db_url = _database_url()
+
+    if db_url:
+        # PostgreSQL — Supabase requires SSL; pool_pre_ping detects stale connections.
+        # pool_recycle avoids hitting Supabase's idle-connection timeout (~10 min).
+        return create_engine(
+            db_url,
+            pool_pre_ping=True,
+            pool_recycle=600,
+            connect_args={"sslmode": "require"},
+        )
+
+    # SQLite fallback
+    from app.core.config import get_settings
+    sqlite_url = f"sqlite:///{get_settings().database_path}"
+    return create_engine(
+        sqlite_url,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+
+
+@_contextmanager
+def get_session() -> _Generator:
+    """Yield a SQLAlchemy Session, committing on clean exit and rolling back on error.
+
+    Thread-safe on both backends:
+      - PostgreSQL: SQLAlchemy's QueuePool assigns one connection per session.
+      - SQLite: StaticPool serialises access.
+
+    Usage:
+        with get_session() as session:
+            result = session.execute(text("SELECT 1")).scalar()
+    """
+    try:
+        from sqlalchemy.orm import Session
+    except ImportError as exc:
+        raise RuntimeError("sqlalchemy is required for get_session()") from exc
+
+    engine = get_engine()
+    with Session(engine) as session:
+        try:
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
