@@ -63,5 +63,18 @@
     "flipkart_url": "https://www.flipkart.com/realme-narzo-90x-5g-flash-blue-128-gb/p/itma63c5c5ce781a",
     "scrape_amazon": true,
     "scrape_flipkart": true
+  },
+  {
+    "_comment": "COMPETITOR — Samsung Galaxy A07 5G. Flipkart: Light Violet 128GB.",
+    "product_id": "samsung_galaxy_a07_5g",
+    "product_name": "Samsung Galaxy A07 5G",
+    "brand": "Samsung",
+    "price_band": "10000-15000",
+    "is_own_brand": false,
+    "amazon_asin": "",
+    "amazon_url": "",
+    "flipkart_url": "https://www.flipkart.com/samsung-galaxy-a07-5g-light-violet-128-gb/p/itm375542879d8d6?pid=MOBHJXB2YNDNYWWQ",
+    "scrape_amazon": false,
+    "scrape_flipkart": true
   }
 ]

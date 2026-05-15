@@ -574,14 +574,15 @@ def list_products():
     )
 
 
-    # Final demo scope: only products launched from Nov 2025 to May 2026.
-    # Old/test products remain internally available but are hidden from the user-facing product list.
+    # Demo scope: curated set of products for the live dashboard.
+    # Add new product IDs here to make them visible in the UI.
     final_demo_product_ids = {
         "infinix_note_60_pro",
         "itel_zeno_200",
         "tecno_pova_curve_2_5g",
         "realme_narzo_90x_5g",
         "iqoo_z_11x_5g",
+        "samsung_galaxy_a07_5g",
     }
 
     products = [
