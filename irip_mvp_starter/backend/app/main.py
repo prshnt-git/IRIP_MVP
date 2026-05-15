@@ -582,7 +582,7 @@ def list_products():
         "tecno_pova_curve_2_5g",
         "realme_narzo_90x_5g",
         "iqoo_z_11x_5g",
-        "samsung_galaxy_a07_5g",
+        "realme_p4_power_5g",
     }
 
     products = [

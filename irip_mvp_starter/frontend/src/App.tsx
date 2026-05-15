@@ -692,7 +692,8 @@ function RateLimitBanner() {
       const isRateLimited = cache
         .getAll()
         .some((q) => q.state.error instanceof ApiError && q.state.error.isRateLimit);
-      setShow(isRateLimited);
+      // Defer to avoid "setState during render" when cache updates happen mid-render
+      setTimeout(() => setShow(isRateLimited), 0);
     });
     return unsub;
   }, [qc]);

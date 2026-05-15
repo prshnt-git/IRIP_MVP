@@ -65,15 +65,15 @@
     "scrape_flipkart": true
   },
   {
-    "_comment": "COMPETITOR — Samsung Galaxy A07 5G. Flipkart: Light Violet 128GB.",
-    "product_id": "samsung_galaxy_a07_5g",
-    "product_name": "Samsung Galaxy A07 5G",
-    "brand": "Samsung",
-    "price_band": "10000-15000",
+    "_comment": "COMPETITOR — Realme P4 Power 5G. Flipkart: Transsilver 128GB.",
+    "product_id": "realme_p4_power_5g",
+    "product_name": "Realme P4 Power 5G",
+    "brand": "Realme",
+    "price_band": "13000-18000",
     "is_own_brand": false,
     "amazon_asin": "",
     "amazon_url": "",
-    "flipkart_url": "https://www.flipkart.com/samsung-galaxy-a07-5g-light-violet-128-gb/p/itm375542879d8d6?pid=MOBHJXB2YNDNYWWQ",
+    "flipkart_url": "https://www.flipkart.com/realme-p4-power-5g-transsilver-128-gb/p/itm49784b322aad0",
     "scrape_amazon": false,
     "scrape_flipkart": true
   }

@@ -3702,6 +3702,45 @@ body,
   color: #334155;
 }
 
+/* Product filter chips inside sentv-filter-chips */
+.sentv-chip--product {
+  background: #f0f0ff;
+  color: #4338ca;
+  border: 1px solid #c7d2fe;
+}
+.sentv-chip--product.active {
+  background: #4338ca;
+  color: #fff;
+  border-color: #4338ca;
+}
+.sentv-chip--product:hover:not(.active) {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+/* Vertical divider between product chips and sentiment chips */
+.sentv-chip-divider {
+  display: inline-block;
+  width: 1px;
+  height: 22px;
+  background: #e2e8f0;
+  margin: 0 6px;
+  align-self: center;
+  flex-shrink: 0;
+}
+
+/* Product name badge on evidence cards */
+.sentv-badge--product {
+  background: #e0e7ff;
+  color: #3730a3;
+  border-radius: 20px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
 /* ── Evidence cards ────────────────────────────────────── */
 
 .sentv-evidence-list {

@@ -274,20 +274,39 @@ function AspectBreakdown({
 // ─── Evidence Cards ───────────────────────────────────────────────────────────
 
 type EvidenceFilter = "all" | "positive" | "negative" | "hinglish";
+type ProductFilter = "all_products" | "own" | "competitor";
 
 function EvidenceSection({
   evidence,
   isLoading,
+  productId,
+  competitorId,
+  productName,
+  competitorName,
+  hasCompetitor,
 }: {
   evidence: EvidenceItem[];
   isLoading: boolean;
+  productId?: string;
+  competitorId?: string;
+  productName?: string;
+  competitorName?: string;
+  hasCompetitor?: boolean;
 }) {
   const [sentFilter, setSentFilter] = useState<EvidenceFilter>("all");
   const [aspectFilter, setAspectFilter] = useState("");
+  const [productFilter, setProductFilter] = useState<ProductFilter>("all_products");
+
+  // Reset product filter when competitor changes
+  useEffect(() => {
+    setProductFilter("all_products");
+  }, [competitorId]);
 
   const aspects = Array.from(new Set(evidence.map((e) => e.aspect))).sort();
 
   const filtered = evidence.filter((e) => {
+    if (productFilter === "own" && productId && e.product_id !== productId) return false;
+    if (productFilter === "competitor" && competitorId && e.product_id !== competitorId) return false;
     if (aspectFilter && e.aspect !== aspectFilter) return false;
     if (sentFilter === "positive" && e.sentiment !== "positive") return false;
     if (sentFilter === "negative" && e.sentiment !== "negative") return false;
@@ -295,12 +314,18 @@ function EvidenceSection({
     return true;
   });
 
-  const FILTER_BUTTONS: { key: EvidenceFilter; label: string }[] = [
+  const SENTIMENT_BUTTONS: { key: EvidenceFilter; label: string }[] = [
     { key: "all",      label: "All" },
     { key: "positive", label: "Positive" },
     { key: "negative", label: "Negative" },
     { key: "hinglish", label: "Hinglish" },
   ];
+
+  const shortName = (name: string | undefined, id: string | undefined) => {
+    const full = name || id || "";
+    const words = full.split(" ");
+    return words.length > 2 ? words.slice(0, 2).join(" ") : full;
+  };
 
   return (
     <section className="sentv-panel">
@@ -316,7 +341,33 @@ function EvidenceSection({
 
       <div className="sentv-filter-row">
         <div className="sentv-filter-chips">
-          {FILTER_BUTTONS.map((btn) => (
+          {hasCompetitor && (
+            <>
+              <button
+                type="button"
+                className={`sentv-chip sentv-chip--product${productFilter === "all_products" ? " active" : ""}`}
+                onClick={() => setProductFilter("all_products")}
+              >
+                Both
+              </button>
+              <button
+                type="button"
+                className={`sentv-chip sentv-chip--product${productFilter === "own" ? " active" : ""}`}
+                onClick={() => setProductFilter("own")}
+              >
+                {shortName(productName, productId)}
+              </button>
+              <button
+                type="button"
+                className={`sentv-chip sentv-chip--product${productFilter === "competitor" ? " active" : ""}`}
+                onClick={() => setProductFilter("competitor")}
+              >
+                {shortName(competitorName, competitorId)}
+              </button>
+              <span className="sentv-chip-divider" />
+            </>
+          )}
+          {SENTIMENT_BUTTONS.map((btn) => (
             <button
               key={btn.key}
               type="button"
@@ -353,6 +404,13 @@ function EvidenceSection({
             <article key={`${item.review_id}-${idx}`} className="sentv-evidence-card">
               <div className="sentv-evidence-top">
                 <div className="sentv-evidence-badges">
+                  {hasCompetitor && (
+                    <span className="sentv-badge sentv-badge--product">
+                      {item.product_id === productId
+                        ? shortName(productName, productId)
+                        : shortName(competitorName, competitorId)}
+                    </span>
+                  )}
                   <span className={sentimentBadgeClass(item.sentiment)}>
                     {item.sentiment}
                   </span>
@@ -546,12 +604,25 @@ export default function SentimentView({
 
   const period = { start_date: startDate, end_date: endDate };
 
-  const { data: evidence = [], isLoading: evidenceLoading } = useQuery<EvidenceItem[]>({
-    queryKey: ["evidence", viewId, startDate, endDate],
-    queryFn: () => fetchProductEvidence(viewId, { ...period, limit: 50 }),
+  // Always fetch own product evidence
+  const { data: ownEvidence = [], isLoading: ownEvidenceLoading } = useQuery<EvidenceItem[]>({
+    queryKey: ["evidence", productId, startDate, endDate],
+    queryFn: () => fetchProductEvidence(productId, { ...period, limit: 50 }),
     staleTime: 5 * 60_000,
     placeholderData: keepPreviousData,
   });
+
+  // Fetch competitor evidence only when a competitor is selected
+  const { data: compEvidence = [], isLoading: compEvidenceLoading } = useQuery<EvidenceItem[]>({
+    queryKey: ["evidence", competitorId, startDate, endDate],
+    queryFn: () => fetchProductEvidence(competitorId!, { ...period, limit: 50 }),
+    enabled: hasCompetitor && Boolean(competitorId),
+    staleTime: 5 * 60_000,
+    placeholderData: keepPreviousData,
+  });
+
+  const allEvidence = [...ownEvidence, ...compEvidence];
+  const evidenceLoading = ownEvidenceLoading || compEvidenceLoading;
 
   const displayProductName = productName || productId;
   const displayCompetitorName = competitorName || competitorId || "";
@@ -578,8 +649,16 @@ export default function SentimentView({
 
       <StatCards dashboard={dashboard} />
       <AspectBreakdown productId={viewId} startDate={startDate} endDate={endDate} />
-      <EvidenceSection evidence={evidence} isLoading={evidenceLoading} />
-      <PhraseTreeMap evidence={evidence} />
+      <EvidenceSection
+        evidence={allEvidence}
+        isLoading={evidenceLoading}
+        productId={productId}
+        competitorId={competitorId}
+        productName={displayProductName}
+        competitorName={displayCompetitorName}
+        hasCompetitor={hasCompetitor}
+      />
+      <PhraseTreeMap evidence={allEvidence} />
     </div>
   );
 }
