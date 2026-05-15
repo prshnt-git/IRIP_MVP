@@ -886,6 +886,9 @@ function MainVisualTile({
               startDate={startDate}
               endDate={endDate}
               dashboard={dashboard}
+              competitorId={competitorId || undefined}
+              competitorName={competitorName || undefined}
+              productName={productName || undefined}
             />
           )}
         </ErrorBoundary>

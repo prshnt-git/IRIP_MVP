@@ -479,6 +479,41 @@ function PhraseTreeMap({ evidence }: { evidence: EvidenceItem[] }) {
   );
 }
 
+// ─── Product toggle ───────────────────────────────────────────────────────────
+
+type ActiveSide = "own" | "competitor";
+
+function ProductToggle({
+  active,
+  onChange,
+  productName,
+  competitorName,
+}: {
+  active: ActiveSide;
+  onChange: (side: ActiveSide) => void;
+  productName: string;
+  competitorName: string;
+}) {
+  return (
+    <div className="sentv-product-toggle">
+      <button
+        type="button"
+        className={`sentv-toggle-btn${active === "own" ? " active" : ""}`}
+        onClick={() => onChange("own")}
+      >
+        {productName}
+      </button>
+      <button
+        type="button"
+        className={`sentv-toggle-btn${active === "competitor" ? " active" : ""}`}
+        onClick={() => onChange("competitor")}
+      >
+        {competitorName}
+      </button>
+    </div>
+  );
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 export default function SentimentView({
@@ -486,30 +521,63 @@ export default function SentimentView({
   startDate,
   endDate,
   dashboard,
+  competitorId,
+  competitorName,
+  productName,
 }: {
   productId: string;
   startDate: string;
   endDate: string;
   dashboard: VisualDashboard;
+  competitorId?: string;
+  competitorName?: string;
+  productName?: string;
 }) {
+  const hasCompetitor = Boolean(competitorId);
+  const [activeSide, setActiveSide] = useState<ActiveSide>("own");
+
+  // Reset to own product whenever the competitor changes
+  useEffect(() => {
+    setActiveSide("own");
+  }, [competitorId]);
+
+  const viewId =
+    hasCompetitor && activeSide === "competitor" ? competitorId! : productId;
+
   const period = { start_date: startDate, end_date: endDate };
 
   const { data: evidence = [], isLoading: evidenceLoading } = useQuery<EvidenceItem[]>({
-    queryKey: ["evidence", productId, startDate, endDate],
-    queryFn: () => fetchProductEvidence(productId, { ...period, limit: 50 }),
+    queryKey: ["evidence", viewId, startDate, endDate],
+    queryFn: () => fetchProductEvidence(viewId, { ...period, limit: 50 }),
     staleTime: 5 * 60_000,
     placeholderData: keepPreviousData,
   });
+
+  const displayProductName = productName || productId;
+  const displayCompetitorName = competitorName || competitorId || "";
 
   return (
     <div className="sentv-root">
       <div className="sentv-header">
         <p className="irip-eyebrow">Sentiment</p>
-        <h2>What users feel about this product</h2>
+        <h2>
+          {hasCompetitor && activeSide === "competitor"
+            ? `What users feel about ${displayCompetitorName}`
+            : "What users feel about this product"}
+        </h2>
       </div>
 
+      {hasCompetitor && (
+        <ProductToggle
+          active={activeSide}
+          onChange={setActiveSide}
+          productName={displayProductName}
+          competitorName={displayCompetitorName}
+        />
+      )}
+
       <StatCards dashboard={dashboard} />
-      <AspectBreakdown productId={productId} startDate={startDate} endDate={endDate} />
+      <AspectBreakdown productId={viewId} startDate={startDate} endDate={endDate} />
       <EvidenceSection evidence={evidence} isLoading={evidenceLoading} />
       <PhraseTreeMap evidence={evidence} />
     </div>

@@ -1,0 +1,36 @@
+{
+  "input_count": 6,
+  "clean_count": 2,
+  "removed_count": 4,
+  "duplicate_count": 0,
+  "removed_examples": [
+    {
+      "row_number": 3,
+      "reason": "metadata_only",
+      "product_name": "Samsung Galaxy A07 5G",
+      "raw_text": "Review for: Color Black • RAM 4 GB • Storage 128 GB",
+      "review_title": ""
+    },
+    {
+      "row_number": 4,
+      "reason": "helpful_count_only",
+      "product_name": "Samsung Galaxy A07 5G",
+      "raw_text": "Helpful for 87",
+      "review_title": ""
+    },
+    {
+      "row_number": 5,
+      "reason": "metadata_only",
+      "product_name": "Samsung Galaxy A07 5G",
+      "raw_text": "Verified Purchase",
+      "review_title": "· 1 month ago"
+    },
+    {
+      "row_number": 7,
+      "reason": "metadata_only",
+      "product_name": "Samsung Galaxy A07 5G",
+      "raw_text": "Review for: Color Light Violet • RAM 4 GB • Storage 128 GB",
+      "review_title": ""
+    }
+  ]
+}
